@@ -4,6 +4,10 @@ services:
     container_name: agronode-mosquitto
     ports:
       - "1883:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
     networks:
       - agronode-net
 
@@ -11,9 +15,9 @@ services:
     image: postgres:16-alpine
     container_name: agronode-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: agronode
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-agronode}
     ports:
       - "5432:5432"
     volumes:
@@ -26,6 +30,15 @@ services:
     container_name: agronode-backend
     working_dir: /app
     command: ["sh", "-c", "echo 'Backend scaffold not implemented yet. AGN-7 will replace this.' && tail -f /dev/null"]
+    environment:
+      APP_PORT: ${BACKEND_PORT:-8080}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-agronode}
+      MQTT_BROKER: ${MQTT_BROKER:-tcp://mosquitto:1883}
+      MQTT_TOPIC: ${MQTT_TOPIC:-agronode/#}
     volumes:
       - ./backend:/app
     ports:
@@ -56,3 +69,5 @@ networks:
 
 volumes:
   postgres-data:
+  mosquitto-data:
+  mosquitto-log:

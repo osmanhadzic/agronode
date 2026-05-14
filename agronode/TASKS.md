@@ -41,7 +41,7 @@ STATUS: DONE
 - Define DB and MQTT configs
 - Ensure backend reads env variables
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
