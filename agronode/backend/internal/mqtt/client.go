@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,14 +145,119 @@ func extractDeviceIDFromTopic(topic string) (string, error) {
 }
 
 func parseTelemetryPayload(payloadBytes []byte) (telemetryPayload, error) {
-	var payload telemetryPayload
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(payloadBytes, &raw); err != nil {
 		return telemetryPayload{}, err
 	}
 
-	if payload.Sensors == nil {
-		payload.Sensors = map[string]float64{}
+	payload := telemetryPayload{Sensors: map[string]float64{}}
+
+	if deviceIDBytes, hasDeviceID := raw["deviceId"]; hasDeviceID {
+		if err := json.Unmarshal(deviceIDBytes, &payload.DeviceID); err != nil {
+			return telemetryPayload{}, fmt.Errorf("invalid deviceId: %w", err)
+		}
+	}
+
+	if timestampBytes, hasTimestamp := raw["timestamp"]; hasTimestamp {
+		timestamp, err := parseTimestamp(timestampBytes)
+		if err != nil {
+			return telemetryPayload{}, err
+		}
+
+		payload.Timestamp = timestamp
+	}
+
+	if sensorsBytes, hasSensors := raw["sensors"]; hasSensors {
+		sensors, err := parseSensorsMap(sensorsBytes)
+		if err != nil {
+			return telemetryPayload{}, err
+		}
+
+		for key, value := range sensors {
+			payload.Sensors[key] = value
+		}
+	}
+
+	if len(payload.Sensors) == 0 {
+		for key, valueBytes := range raw {
+			if key == "deviceId" || key == "timestamp" || key == "sensors" || key == "version" {
+				continue
+			}
+
+			value, ok, err := parseNumericRaw(valueBytes)
+			if err != nil {
+				return telemetryPayload{}, fmt.Errorf("invalid numeric field %s: %w", key, err)
+			}
+
+			if ok {
+				payload.Sensors[key] = value
+			}
+		}
 	}
 
 	return payload, nil
+}
+
+func parseTimestamp(rawTimestamp json.RawMessage) (int64, error) {
+	var asInt int64
+	if err := json.Unmarshal(rawTimestamp, &asInt); err == nil {
+		return asInt, nil
+	}
+
+	var asFloat float64
+	if err := json.Unmarshal(rawTimestamp, &asFloat); err == nil {
+		return int64(asFloat), nil
+	}
+
+	var asString string
+	if err := json.Unmarshal(rawTimestamp, &asString); err == nil {
+		parsedValue, parseErr := strconv.ParseInt(strings.TrimSpace(asString), 10, 64)
+		if parseErr != nil {
+			return 0, fmt.Errorf("invalid timestamp string")
+		}
+
+		return parsedValue, nil
+	}
+
+	return 0, fmt.Errorf("invalid timestamp format")
+}
+
+func parseSensorsMap(rawSensors json.RawMessage) (map[string]float64, error) {
+	var sensorsRaw map[string]json.RawMessage
+	if err := json.Unmarshal(rawSensors, &sensorsRaw); err != nil {
+		return nil, fmt.Errorf("invalid sensors object: %w", err)
+	}
+
+	sensors := make(map[string]float64, len(sensorsRaw))
+	for key, valueBytes := range sensorsRaw {
+		value, ok, err := parseNumericRaw(valueBytes)
+		if err != nil {
+			return nil, fmt.Errorf("invalid sensor %s: %w", key, err)
+		}
+
+		if ok {
+			sensors[key] = value
+		}
+	}
+
+	return sensors, nil
+}
+
+func parseNumericRaw(rawValue json.RawMessage) (float64, bool, error) {
+	var asFloat float64
+	if err := json.Unmarshal(rawValue, &asFloat); err == nil {
+		return asFloat, true, nil
+	}
+
+	var asString string
+	if err := json.Unmarshal(rawValue, &asString); err == nil {
+		parsedValue, parseErr := strconv.ParseFloat(strings.TrimSpace(asString), 64)
+		if parseErr != nil {
+			return 0, false, fmt.Errorf("not a number")
+		}
+
+		return parsedValue, true, nil
+	}
+
+	return 0, false, nil
 }

@@ -9,6 +9,7 @@ import (
 
 	"agronode/backend/internal/models"
 	"agronode/backend/internal/repositories"
+	"agronode/backend/internal/services"
 	"github.com/gin-gonic/gin"
 )
 
@@ -55,7 +56,12 @@ func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 	readings, err := handler.service.GetTelemetryByDeviceID(context.Request.Context(), deviceID)
 	if err != nil {
 		handler.logger.Error("get telemetry by device failed", "deviceId", deviceID, "error", err)
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if errors.Is(err, services.ErrValidation) {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		context.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch telemetry"})
 		return
 	}
 
@@ -72,8 +78,13 @@ func (handler *telemetryHandler) getLatestByDeviceID(context *gin.Context) {
 			return
 		}
 
+		if errors.Is(err, services.ErrValidation) {
+			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
 		handler.logger.Error("get latest telemetry failed", "deviceId", deviceID, "error", err)
-		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		context.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch telemetry"})
 		return
 	}
 

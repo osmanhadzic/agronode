@@ -18,6 +18,8 @@ type TelemetryService struct {
 	logger     *slog.Logger
 }
 
+var ErrValidation = errors.New("telemetry validation failed")
+
 func NewTelemetryService(repository repositories.TelemetryRepository, logger *slog.Logger) *TelemetryService {
 	return &TelemetryService{
 		repository: repository,
@@ -41,7 +43,7 @@ func (service *TelemetryService) HandleTelemetry(context context.Context, teleme
 	temperature, hasTemperature := telemetry.Sensors["temperature"]
 	humidity, hasHumidity := telemetry.Sensors["humidity"]
 	if !hasTemperature || !hasHumidity {
-		return fmt.Errorf("required sensors missing: temperature and humidity are required")
+		return fmt.Errorf("%w: required sensors missing: temperature and humidity are required", ErrValidation)
 	}
 
 	createdAt := time.Now().UTC()
@@ -81,7 +83,7 @@ func (service *TelemetryService) GetTelemetryByDeviceID(context context.Context,
 	}
 
 	if strings.TrimSpace(deviceID) == "" {
-		return nil, errors.New("device id is required")
+		return nil, fmt.Errorf("%w: device id is required", ErrValidation)
 	}
 
 	return service.repository.ListByDeviceID(context, deviceID)
@@ -93,7 +95,7 @@ func (service *TelemetryService) GetLatestTelemetryByDeviceID(context context.Co
 	}
 
 	if strings.TrimSpace(deviceID) == "" {
-		return models.TelemetryReading{}, errors.New("device id is required")
+		return models.TelemetryReading{}, fmt.Errorf("%w: device id is required", ErrValidation)
 	}
 
 	return service.repository.GetLatestByDeviceID(context, deviceID)
@@ -101,19 +103,19 @@ func (service *TelemetryService) GetLatestTelemetryByDeviceID(context context.Co
 
 func validateTelemetryReading(reading models.TelemetryReading) error {
 	if strings.TrimSpace(reading.DeviceID) == "" {
-		return errors.New("device id is required")
+		return fmt.Errorf("%w: device id is required", ErrValidation)
 	}
 
 	if reading.CreatedAt.IsZero() {
-		return errors.New("createdAt is required")
+		return fmt.Errorf("%w: createdAt is required", ErrValidation)
 	}
 
 	if reading.Temperature < -100 || reading.Temperature > 150 {
-		return fmt.Errorf("temperature is out of range")
+		return fmt.Errorf("%w: temperature is out of range", ErrValidation)
 	}
 
 	if reading.Humidity < 0 || reading.Humidity > 100 {
-		return fmt.Errorf("humidity is out of range")
+		return fmt.Errorf("%w: humidity is out of range", ErrValidation)
 	}
 
 	return nil

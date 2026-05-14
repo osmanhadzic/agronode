@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"agronode/backend/internal/models"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm"
 )
 
@@ -24,7 +25,17 @@ func (repository *GormTelemetryRepository) Save(context context.Context, reading
 		CreatedAt:   reading.CreatedAt,
 	}
 
-	return repository.database.WithContext(context).Create(&entity).Error
+	return repository.database.WithContext(context).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "device_id"},
+				{Name: "created_at"},
+				{Name: "temperature"},
+				{Name: "humidity"},
+			},
+			DoNothing: true,
+		}).
+		Create(&entity).Error
 }
 
 func (repository *GormTelemetryRepository) List(context context.Context) ([]models.TelemetryReading, error) {

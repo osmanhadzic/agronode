@@ -183,7 +183,7 @@ STATUS: DONE
 - Fix API inconsistencies
 - Fix frontend data sync
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 

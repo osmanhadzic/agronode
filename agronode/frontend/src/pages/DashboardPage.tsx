@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { fetchAllTelemetry, fetchTelemetryByDeviceId } from '../api/telemetryApi'
+import { fetchAllTelemetry } from '../api/telemetryApi'
 import { TelemetryLineChart } from '../charts/TelemetryLineChart'
 import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
@@ -8,9 +8,7 @@ import type { TelemetryReading } from '../types/telemetry'
 
 export function DashboardPage() {
   const [telemetry, setTelemetry] = useState<TelemetryReading[]>([])
-  const [deviceTelemetry, setDeviceTelemetry] = useState<TelemetryReading[]>([])
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
-  const [latestReading, setLatestReading] = useState<TelemetryReading | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -29,8 +27,22 @@ export function DashboardPage() {
 
         setTelemetry(readings)
 
-        const firstDeviceId = readings[0]?.deviceId ?? ''
-        setSelectedDeviceId((previous) => previous || firstDeviceId)
+        const availableDeviceIds = [...new Set(readings.map((reading) => reading.deviceId))]
+        const firstDeviceId = availableDeviceIds[0] ?? ''
+
+        setSelectedDeviceId((previous) => {
+          if (!previous) {
+            return firstDeviceId
+          }
+
+          if (!availableDeviceIds.includes(previous)) {
+            return firstDeviceId
+          }
+
+          return previous
+        })
+
+        setError('')
       } catch {
         if (!isMounted) {
           return
@@ -46,53 +58,29 @@ export function DashboardPage() {
 
     void loadTelemetry()
 
-    return () => {
-      isMounted = false
-    }
-  }, [])
-
-  useEffect(() => {
-    let isMounted = true
-
-    async function loadDeviceTelemetry() {
-      if (!selectedDeviceId) {
-        setDeviceTelemetry([])
-        setLatestReading(null)
-        return
-      }
-
-      try {
-        const readings = await fetchTelemetryByDeviceId(selectedDeviceId)
-        if (!isMounted) {
-          return
-        }
-
-        setDeviceTelemetry(readings)
-        setLatestReading(readings[0] ?? null)
-      } catch {
-        if (!isMounted) {
-          return
-        }
-
-        setError('Failed to load latest device reading')
-      }
-    }
-
-    void loadDeviceTelemetry()
-
     const interval = window.setInterval(() => {
-      void loadDeviceTelemetry()
+      void loadTelemetry()
     }, 5000)
 
     return () => {
       isMounted = false
       window.clearInterval(interval)
     }
-  }, [selectedDeviceId])
+  }, [])
 
   const devices = useMemo(() => {
     return [...new Set(telemetry.map((reading) => reading.deviceId))]
   }, [telemetry])
+
+  const deviceTelemetry = useMemo(() => {
+    if (!selectedDeviceId) {
+      return []
+    }
+
+    return telemetry.filter((reading) => reading.deviceId === selectedDeviceId)
+  }, [selectedDeviceId, telemetry])
+
+  const latestReading = deviceTelemetry[0] ?? null
 
   return (
     <main className="dashboard">
