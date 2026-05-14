@@ -52,7 +52,7 @@ STATUS: DONE
 - Enable port 1883
 - Add config file
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
