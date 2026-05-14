@@ -138,7 +138,7 @@ STATUS: DONE
 - Setup Vite + React + TypeScript
 - Setup folder structure
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -147,7 +147,7 @@ STATUS: TODO
 - Connect to backend API
 - Handle data fetching
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -156,7 +156,7 @@ STATUS: TODO
 - Show temperature & humidity
 - Device selector dropdown
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -164,7 +164,7 @@ STATUS: TODO
 - Implement Recharts line chart
 - Auto refresh every 5 seconds
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -174,7 +174,7 @@ STATUS: TODO
 - ESP32 → MQTT → Backend → DB → Frontend
 - Verify end-to-end data flow
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
