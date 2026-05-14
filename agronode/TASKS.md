@@ -82,7 +82,7 @@ STATUS: DONE
 - Setup Gin framework
 - Setup project structure (clean architecture)
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -91,7 +91,7 @@ STATUS: TODO
 - Create sensor_data table
 - Add migrations
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -101,7 +101,7 @@ STATUS: TODO
 - Extract deviceId from topic
 - Forward data to service layer
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -110,7 +110,7 @@ STATUS: TODO
 - Process incoming telemetry
 - Prepare data for storage
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -119,7 +119,7 @@ STATUS: TODO
 - Save sensor data into DB
 - Query by deviceId
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -128,7 +128,7 @@ STATUS: TODO
 - GET /api/data/:deviceId
 - GET /api/latest/:deviceId
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
