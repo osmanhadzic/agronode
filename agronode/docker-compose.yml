@@ -1,0 +1,58 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: agronode-mosquitto
+    ports:
+      - "1883:1883"
+    networks:
+      - agronode-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: agronode-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agronode
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - agronode-net
+
+  backend:
+    image: golang:1.24-alpine
+    container_name: agronode-backend
+    working_dir: /app
+    command: ["sh", "-c", "echo 'Backend scaffold not implemented yet. AGN-7 will replace this.' && tail -f /dev/null"]
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mosquitto
+      - postgres
+    networks:
+      - agronode-net
+
+  frontend:
+    image: node:22-alpine
+    container_name: agronode-frontend
+    working_dir: /app
+    command: ["sh", "-c", "echo 'Frontend scaffold not implemented yet. AGN-13 will replace this.' && tail -f /dev/null"]
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - agronode-net
+
+networks:
+  agronode-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
