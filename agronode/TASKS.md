@@ -62,7 +62,7 @@ STATUS: DONE
 - Define JSON payload structure
 - Create MQTT_CONTRACT.md
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
@@ -72,7 +72,7 @@ STATUS: TODO
 - Publish temperature + humidity every 5 seconds
 - Use DHT22 sensor
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 
