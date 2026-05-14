@@ -5,10 +5,11 @@ import (
 	"net/http"
 
 	"agronode/backend/internal/handlers"
+	"agronode/backend/internal/realtime"
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter(logger *slog.Logger, telemetryService handlers.TelemetryQueryService) *gin.Engine {
+func NewRouter(logger *slog.Logger, telemetryService handlers.TelemetryQueryService, realtimeHub *realtime.Hub) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), gin.Logger())
 	router.Use(corsMiddleware())
@@ -16,6 +17,7 @@ func NewRouter(logger *slog.Logger, telemetryService handlers.TelemetryQueryServ
 	api := router.Group("/api")
 	handlers.RegisterHealthRoutes(api, logger)
 	handlers.RegisterTelemetryRoutes(api, logger, telemetryService)
+	handlers.RegisterRealtimeRoutes(router, logger, realtimeHub)
 
 	return router
 }

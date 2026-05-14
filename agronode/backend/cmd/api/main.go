@@ -12,6 +12,7 @@ import (
 	"agronode/backend/internal/config"
 	"agronode/backend/internal/database"
 	"agronode/backend/internal/mqtt"
+	"agronode/backend/internal/realtime"
 	"agronode/backend/internal/repositories"
 	"agronode/backend/internal/server"
 	"agronode/backend/internal/services"
@@ -45,6 +46,8 @@ func main() {
 	store := database.NewStore(databaseConnection)
 	telemetryRepository := repositories.NewGormTelemetryRepository(store.DB)
 	telemetryService := services.NewTelemetryService(telemetryRepository, logger)
+	realtimeHub := realtime.NewHub(logger)
+	telemetryService.SetBroadcaster(realtimeHub)
 
 	appContext, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
@@ -58,7 +61,7 @@ func main() {
 		}
 	}()
 
-	router := server.NewRouter(logger, telemetryService)
+	router := server.NewRouter(logger, telemetryService, realtimeHub)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.AppPort,
 		Handler:           router,

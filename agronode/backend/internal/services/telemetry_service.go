@@ -16,15 +16,24 @@ import (
 type TelemetryService struct {
 	repository repositories.TelemetryRepository
 	logger     *slog.Logger
+	broadcaster TelemetryBroadcaster
 }
 
 var ErrValidation = errors.New("telemetry validation failed")
+
+type TelemetryBroadcaster interface {
+	Publish(models.TelemetryReading)
+}
 
 func NewTelemetryService(repository repositories.TelemetryRepository, logger *slog.Logger) *TelemetryService {
 	return &TelemetryService{
 		repository: repository,
 		logger:     logger,
 	}
+}
+
+func (service *TelemetryService) SetBroadcaster(broadcaster TelemetryBroadcaster) {
+	service.broadcaster = broadcaster
 }
 
 func (service *TelemetryService) ProcessTelemetry(context context.Context, reading models.TelemetryReading) error {
@@ -36,7 +45,15 @@ func (service *TelemetryService) ProcessTelemetry(context context.Context, readi
 		return err
 	}
 
-	return service.repository.Save(context, reading)
+	if err := service.repository.Save(context, reading); err != nil {
+		return err
+	}
+
+	if service.broadcaster != nil {
+		service.broadcaster.Publish(reading)
+	}
+
+	return nil
 }
 
 func (service *TelemetryService) HandleTelemetry(context context.Context, telemetry mqtt.TelemetryEnvelope) error {

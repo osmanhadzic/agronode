@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { fetchAllTelemetry } from '../api/telemetryApi'
+import { createTelemetrySocket } from '../api/telemetrySocket'
 import { TelemetryLineChart } from '../charts/TelemetryLineChart'
 import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
@@ -58,13 +59,40 @@ export function DashboardPage() {
 
     void loadTelemetry()
 
-    const interval = window.setInterval(() => {
-      void loadTelemetry()
-    }, 5000)
+    const cleanupSocket = createTelemetrySocket(
+      (reading) => {
+        if (!isMounted) {
+          return
+        }
+
+        setError('')
+
+        setTelemetry((previous) => {
+          const exists = previous.some(
+            (item) =>
+              item.deviceId === reading.deviceId &&
+              item.createdAt === reading.createdAt &&
+              item.temperature === reading.temperature &&
+              item.humidity === reading.humidity,
+          )
+
+          if (exists) {
+            return previous
+          }
+
+          return [reading, ...previous]
+        })
+      },
+      () => {
+        if (isMounted) {
+          setError('Realtime connection lost. Reconnecting...')
+        }
+      },
+    )
 
     return () => {
       isMounted = false
-      window.clearInterval(interval)
+      cleanupSocket()
     }
   }, [])
 
