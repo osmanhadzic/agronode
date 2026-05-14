@@ -73,6 +73,23 @@ services:
     networks:
       - agronode-net
 
+  demo-device:
+    image: eclipse-mosquitto:2
+    container_name: agronode-demo-device
+    profiles: ["demo"]
+    environment:
+      DEVICE_ID: ${DEMO_DEVICE_ID:-demo-device-1}
+      PUBLISH_INTERVAL_SECONDS: ${DEMO_PUBLISH_INTERVAL_SECONDS:-5}
+      MQTT_HOST: ${DEMO_MQTT_HOST:-mosquitto}
+      MQTT_PORT: ${DEMO_MQTT_PORT:-1883}
+    volumes:
+      - ./infra/demo-device/publisher.sh:/demo/publisher.sh:ro
+    command: ["sh", "/demo/publisher.sh"]
+    depends_on:
+      - mosquitto
+    networks:
+      - agronode-net
+
 networks:
   agronode-net:
     driver: bridge
