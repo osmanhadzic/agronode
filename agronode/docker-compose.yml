@@ -29,7 +29,12 @@ services:
     image: golang:1.24-alpine
     container_name: agronode-backend
     working_dir: /app
-    command: ["sh", "-c", "echo 'Backend scaffold not implemented yet. AGN-7 will replace this.' && tail -f /dev/null"]
+    command:
+      [
+        "sh",
+        "-c",
+        "export PATH=/usr/local/go/bin:$PATH && go mod download && go run ./cmd/api",
+      ]
     environment:
       APP_PORT: ${BACKEND_PORT:-8080}
       DB_HOST: ${DB_HOST:-postgres}
@@ -53,7 +58,12 @@ services:
     image: node:22-alpine
     container_name: agronode-frontend
     working_dir: /app
-    command: ["sh", "-c", "echo 'Frontend scaffold not implemented yet. AGN-13 will replace this.' && tail -f /dev/null"]
+    command:
+      [
+        "sh",
+        "-c",
+        "npm install && npm run dev -- --host 0.0.0.0 --port 5173",
+      ]
     volumes:
       - ./frontend:/app
     ports:
