@@ -1,6 +1,5 @@
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -13,15 +12,28 @@ import type { TelemetryReading } from '../types/telemetry'
 
 type TelemetryLineChartProps = {
   data: TelemetryReading[]
+  selectedSensors: string[]
 }
 
 type ChartPoint = {
   time: string
-  temperature: number
-  humidity: number
+  sensors: Record<string, number>
 }
 
-export function TelemetryLineChart({ data }: TelemetryLineChartProps) {
+const lineColors = ['#2563eb', '#16a34a', '#a855f7', '#f59e0b', '#ef4444', '#0ea5e9']
+
+function toSensorLabel(sensorKey: string): string {
+  if (sensorKey === 'co2') {
+    return 'CO₂'
+  }
+
+  return sensorKey
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+export function TelemetryLineChart({ data, selectedSensors }: TelemetryLineChartProps) {
   const points: ChartPoint[] = [...data]
     .reverse()
     .map((reading) => ({
@@ -30,38 +42,43 @@ export function TelemetryLineChart({ data }: TelemetryLineChartProps) {
         minute: '2-digit',
         second: '2-digit',
       }),
-      temperature: reading.temperature,
-      humidity: reading.humidity,
+      sensors: {
+        temperature: reading.temperature,
+        humidity: reading.humidity,
+        ...(reading.sensors ?? {}),
+      },
     }))
 
   return (
     <div className="chart-panel">
       <h2 className="chart-title">Live Telemetry</h2>
-      <ResponsiveContainer width="100%" height={280}>
-        <LineChart data={points}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="time" />
-          <YAxis />
-          <Tooltip />
-          <Legend />
-          <Line
-            type="monotone"
-            dataKey="temperature"
-            stroke="#2563eb"
-            strokeWidth={2}
-            dot={false}
-            name="Temperature (°C)"
-          />
-          <Line
-            type="monotone"
-            dataKey="humidity"
-            stroke="#16a34a"
-            strokeWidth={2}
-            dot={false}
-            name="Humidity (%)"
-          />
-        </LineChart>
-      </ResponsiveContainer>
+      {selectedSensors.length === 0 ? (
+        <p className="dashboard-message">No measurement selected.</p>
+      ) : (
+        <div className="chart-grid">
+          {selectedSensors.map((sensorKey, index) => (
+            <section key={sensorKey} className="chart-card">
+              <h3 className="chart-card-title">{toSensorLabel(sensorKey)}</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={points}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey={`sensors.${sensorKey}`}
+                    stroke={lineColors[index % lineColors.length]}
+                    strokeWidth={2}
+                    dot={false}
+                    name={toSensorLabel(sensorKey)}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </section>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

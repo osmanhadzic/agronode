@@ -57,10 +57,18 @@ func (service *TelemetryService) ProcessTelemetry(context context.Context, readi
 }
 
 func (service *TelemetryService) HandleTelemetry(context context.Context, telemetry mqtt.TelemetryEnvelope) error {
-	temperature, hasTemperature := telemetry.Sensors["temperature"]
-	humidity, hasHumidity := telemetry.Sensors["humidity"]
-	if !hasTemperature || !hasHumidity {
-		return fmt.Errorf("%w: required sensors missing: temperature and humidity are required", ErrValidation)
+	temperature := 0.0
+	humidity := 0.0
+	if sensorTemperature, hasTemperature := telemetry.Sensors["temperature"]; hasTemperature {
+		temperature = sensorTemperature
+	}
+	if sensorHumidity, hasHumidity := telemetry.Sensors["humidity"]; hasHumidity {
+		humidity = sensorHumidity
+	}
+
+	sensors := make(map[string]float64, len(telemetry.Sensors))
+	for key, value := range telemetry.Sensors {
+		sensors[key] = value
 	}
 
 	createdAt := time.Now().UTC()
@@ -72,6 +80,7 @@ func (service *TelemetryService) HandleTelemetry(context context.Context, teleme
 		DeviceID:    telemetry.DeviceID,
 		Temperature: temperature,
 		Humidity:    humidity,
+		Sensors:     sensors,
 		CreatedAt:   createdAt,
 	}
 
@@ -127,12 +136,20 @@ func validateTelemetryReading(reading models.TelemetryReading) error {
 		return fmt.Errorf("%w: createdAt is required", ErrValidation)
 	}
 
-	if reading.Temperature < -100 || reading.Temperature > 150 {
-		return fmt.Errorf("%w: temperature is out of range", ErrValidation)
+	if len(reading.Sensors) == 0 {
+		return fmt.Errorf("%w: at least one sensor value is required", ErrValidation)
 	}
 
-	if reading.Humidity < 0 || reading.Humidity > 100 {
-		return fmt.Errorf("%w: humidity is out of range", ErrValidation)
+	if temperature, hasTemperature := reading.Sensors["temperature"]; hasTemperature {
+		if temperature < -100 || temperature > 150 {
+			return fmt.Errorf("%w: temperature is out of range", ErrValidation)
+		}
+	}
+
+	if humidity, hasHumidity := reading.Sensors["humidity"]; hasHumidity {
+		if humidity < 0 || humidity > 100 {
+			return fmt.Errorf("%w: humidity is out of range", ErrValidation)
+		}
 	}
 
 	return nil

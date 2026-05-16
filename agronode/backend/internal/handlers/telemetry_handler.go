@@ -28,6 +28,7 @@ type telemetryResponse struct {
 	DeviceID    string  `json:"deviceId"`
 	Temperature float64 `json:"temperature"`
 	Humidity    float64 `json:"humidity"`
+	Sensors     map[string]float64 `json:"sensors,omitempty"`
 	CreatedAt   string  `json:"createdAt"`
 }
 
@@ -107,6 +108,7 @@ func toTelemetryResponse(reading models.TelemetryReading) telemetryResponse {
 		DeviceID:    reading.DeviceID,
 		Temperature: reading.Temperature,
 		Humidity:    reading.Humidity,
+		Sensors:     reading.Sensors,
 		CreatedAt:   createdAt,
 	}
 }
