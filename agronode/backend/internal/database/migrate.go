@@ -20,6 +20,7 @@ type migration struct {
 var orderedMigrations = []migration{
 	{Version: "000001", File: "migrations/000001_create_sensor_data.up.sql"},
 	{Version: "000002", File: "migrations/000002_deduplicate_sensor_data_and_add_unique_index.up.sql"},
+	{Version: "000003", File: "migrations/000003_add_flexible_sensors_jsonb.up.sql"},
 }
 
 func RunMigrations(context context.Context, db *gorm.DB, logger *slog.Logger) error {

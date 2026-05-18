@@ -7,6 +7,7 @@ type SensorData struct {
 	DeviceID    string    `gorm:"column:device_id;not null;index"`
 	Temperature float64   `gorm:"not null"`
 	Humidity    float64   `gorm:"not null"`
+	Sensors     string    `gorm:"type:jsonb;not null;default:'{}'::jsonb"`
 	CreatedAt   time.Time `gorm:"column:created_at;not null;default:now();index"`
 }
 

@@ -5,11 +5,13 @@ import { createTelemetrySocket } from '../api/telemetrySocket'
 import { TelemetryLineChart } from '../charts/TelemetryLineChart'
 import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
+import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector'
 import type { TelemetryReading } from '../types/telemetry'
 
 export function DashboardPage() {
   const [telemetry, setTelemetry] = useState<TelemetryReading[]>([])
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
+  const [selectedSensors, setSelectedSensors] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -73,7 +75,8 @@ export function DashboardPage() {
               item.deviceId === reading.deviceId &&
               item.createdAt === reading.createdAt &&
               item.temperature === reading.temperature &&
-              item.humidity === reading.humidity,
+              item.humidity === reading.humidity &&
+              JSON.stringify(item.sensors ?? {}) === JSON.stringify(reading.sensors ?? {}),
           )
 
           if (exists) {
@@ -110,6 +113,90 @@ export function DashboardPage() {
 
   const latestReading = deviceTelemetry[0] ?? null
 
+  const availableSensors = useMemo(() => {
+    const sensorSet = new Set<string>(['temperature', 'humidity'])
+
+    for (const reading of deviceTelemetry) {
+      const sensors = reading.sensors ?? {}
+      for (const sensorKey of Object.keys(sensors)) {
+        sensorSet.add(sensorKey)
+      }
+    }
+
+    return [...sensorSet]
+  }, [deviceTelemetry])
+
+  const latestSensors = useMemo(() => {
+    if (!latestReading) {
+      return null
+    }
+
+    const normalized: Record<string, number> = {
+      temperature: latestReading.temperature,
+      humidity: latestReading.humidity,
+      ...(latestReading.sensors ?? {}),
+    }
+
+    return normalized
+  }, [latestReading])
+
+  const visibleSensors = useMemo(() => {
+    if (availableSensors.length === 0) {
+      return []
+    }
+
+    if (selectedSensors.length === 0) {
+      return availableSensors
+    }
+
+    const filtered = selectedSensors.filter((sensorKey) =>
+      availableSensors.includes(sensorKey),
+    )
+
+    return filtered.length > 0 ? filtered : availableSensors
+  }, [availableSensors, selectedSensors])
+
+  const formatSensorLabel = (sensorKey: string) => {
+    if (sensorKey === 'co2') {
+      return 'CO₂'
+    }
+
+    return sensorKey
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }
+
+  const getSensorUnit = (sensorKey: string) => {
+    if (sensorKey === 'temperature') {
+      return '°C'
+    }
+
+    if (sensorKey === 'humidity') {
+      return '%'
+    }
+
+    if (sensorKey === 'co2') {
+      return 'ppm'
+    }
+
+    return ''
+  }
+
+  const handleToggleSensor = (sensorKey: string) => {
+    setSelectedSensors((previous) => {
+      const currentSelection =
+        previous.length === 0 ? [...availableSensors] : [...previous]
+
+      if (currentSelection.includes(sensorKey)) {
+        const remaining = currentSelection.filter((key) => key !== sensorKey)
+        return remaining.length > 0 ? remaining : previous
+      }
+
+      return [...currentSelection, sensorKey]
+    })
+  }
+
   return (
     <main className="dashboard">
       <header className="dashboard-header">
@@ -129,20 +216,24 @@ export function DashboardPage() {
         <p className="dashboard-message">No telemetry data available</p>
       )}
 
+      <SensorVisibilitySelector
+        sensors={availableSensors}
+        selectedSensors={visibleSensors}
+        onToggleSensor={handleToggleSensor}
+      />
+
       <section className="sensor-grid">
-        <SensorCard
-          label="Temperature"
-          value={latestReading?.temperature ?? null}
-          unit="°C"
-        />
-        <SensorCard
-          label="Humidity"
-          value={latestReading?.humidity ?? null}
-          unit="%"
-        />
+        {visibleSensors.map((sensorKey) => (
+          <SensorCard
+            key={sensorKey}
+            label={formatSensorLabel(sensorKey)}
+            value={latestSensors?.[sensorKey] ?? null}
+            unit={getSensorUnit(sensorKey)}
+          />
+        ))}
       </section>
 
-      <TelemetryLineChart data={deviceTelemetry} />
+      <TelemetryLineChart data={deviceTelemetry} selectedSensors={visibleSensors} />
     </main>
   )
 }
