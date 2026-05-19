@@ -202,7 +202,7 @@ STATUS: DONE
 - Finalize ARCHITECTURE.md
 - Ensure all docs are consistent
 
-STATUS: TODO
+STATUS: DONE
 
 ---
 

@@ -8,7 +8,7 @@ It collects real-time sensor data from ESP32 devices, transports it via MQTT, pr
 
 ---
 
-# System Architecture
+## System Architecture
 
 ## High-Level Flow
 
@@ -33,9 +33,9 @@ Go Backend (MQTT Consumer + API)
 
 ---
 
-# Data Flow Explanation
+## Data Flow Explanation
 
-## 1. ESP32 Devices (Edge Layer)
+### 1. ESP32 Devices (Edge Layer)
 
 Each ESP32 device is responsible for:
 
@@ -44,28 +44,33 @@ Each ESP32 device is responsible for:
 - Publishing data to MQTT broker
 - Using topic format:
 
-```
-agronode/{deviceId}
+```txt
+agronode/{deviceId}/telemetry
 ```
 
 Example:
 
-```
-agronode/device-1
+```txt
+agronode/device-1/telemetry
 ```
 
 Payload:
 
 ```json
 {
-  "temperature": 24.5,
-  "humidity": 60
+  "deviceId": "device-1",
+  "timestamp": 1715539200,
+  "version": 1,
+  "sensors": {
+    "temperature": 24.5,
+    "humidity": 60
+  }
 }
 ```
 
 ---
 
-## 2. MQTT Broker (Message Layer)
+### 2. MQTT Broker (Message Layer)
 
 We use:
 
@@ -85,13 +90,13 @@ Why MQTT:
 
 ---
 
-## 3. Backend (Processing Layer)
+### 3. Backend (Processing Layer)
 
 The backend is written in Go.
 
 It has two responsibilities:
 
-### A) MQTT Consumer
+#### A) MQTT Consumer
 - Subscribes to:
 ```
 agronode/#
@@ -104,19 +109,26 @@ agronode/#
 
 ---
 
-### B) REST API
+#### B) API + Realtime
 
 Exposes data to frontend:
 
-```
+```txt
+GET /api/health
 GET /api/data
 GET /api/data/:deviceId
 GET /api/latest/:deviceId
 ```
 
+Realtime stream:
+
+```txt
+GET /ws/telemetry (WebSocket)
+```
+
 ---
 
-### Backend Internal Architecture
+#### Backend Internal Architecture
 
 ```
 /internal
@@ -131,7 +143,7 @@ GET /api/latest/:deviceId
 
 ---
 
-## 4. Database Layer (PostgreSQL)
+### 4. Database Layer (PostgreSQL)
 
 Stores all sensor readings.
 
@@ -143,6 +155,7 @@ CREATE TABLE sensor_data (
     device_id TEXT NOT NULL,
     temperature FLOAT NOT NULL,
     humidity FLOAT NOT NULL,
+  sensors JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMP DEFAULT NOW()
 );
 ```
@@ -155,7 +168,7 @@ CREATE TABLE sensor_data (
 
 ---
 
-## 5. Frontend (Visualization Layer)
+### 5. Frontend (Visualization Layer)
 
 Built in React + TypeScript.
 
@@ -174,7 +187,7 @@ API → React Service Layer → Components → Dashboard UI
 
 ---
 
-# Docker Architecture
+## Docker Architecture
 
 All services run via Docker Compose:
 
@@ -202,7 +215,7 @@ All services run via Docker Compose:
 
 ---
 
-# Scaling Strategy
+## Scaling Strategy
 
 ## Phase 1 (MVP)
 - Single broker
@@ -222,7 +235,7 @@ All services run via Docker Compose:
 
 ---
 
-# Key Design Decisions
+## Key Design Decisions
 
 ## Why MQTT?
 - Low bandwidth usage
@@ -241,7 +254,7 @@ All services run via Docker Compose:
 
 ---
 
-# Future Enhancements
+## Future Enhancements
 
 - Device authentication layer
 - Alerting system (email/SMS)
@@ -252,7 +265,7 @@ All services run via Docker Compose:
 
 ---
 
-# Summary
+## Summary
 
 AgroNode is designed as a modular IoT system where:
 

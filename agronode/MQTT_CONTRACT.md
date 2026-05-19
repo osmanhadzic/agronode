@@ -2,10 +2,15 @@
 
 ## Topic Structure
 
+```txt
 agronode/{deviceId}/telemetry
+```
 
 Example:
+
+```txt
 agronode/device-1/telemetry
+```
 
 ---
 
@@ -13,13 +18,16 @@ agronode/device-1/telemetry
 
 All devices MUST send data in this format:
 
+```json
 {
   "deviceId": "string",
-  "timestamp": "unix_epoch",
+  "timestamp": 1715539200,
+  "version": 1,
   "sensors": {
-    "sensor_name": "value"
+    "sensor_name": 0
   }
 }
+```
 
 ---
 
@@ -31,12 +39,14 @@ All devices MUST send data in this format:
 
 Example:
 
+```json
 {
   "temperature": 24.5,
   "humidity": 60,
   "co2": 450,
   "soil_moisture": 33
 }
+```
 
 ---
 
@@ -44,10 +54,12 @@ Example:
 
 Devices MAY include:
 
+```json
 {
   "battery": 87,
   "signal_strength": -70
 }
+```
 
 ---
 
@@ -55,9 +67,11 @@ Devices MAY include:
 
 Future updates must include:
 
+```json
 {
   "version": 1
 }
+```
 
 So backend can support multiple formats.
 

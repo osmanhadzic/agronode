@@ -7,12 +7,11 @@
 +---------------------------+
 | Device Selector (Navbar) |
 +---------------------------+
+| Sensor Visibility        |
++---------------------------+
 | Sensor Cards             |
-| Temperature | Humidity   |
-+---------------------------+
++--------------------------+
 | Live Chart               |
-+---------------------------+
-| History Table            |
 +---------------------------+
 
 ---
@@ -23,6 +22,7 @@
 - Live sensor data
 - Charts
 - Device switching
+- Sensor visibility filtering
 
 ---
 
@@ -33,18 +33,22 @@
 - value
 - unit
 
-## Chart
+## TelemetryLineChart
 - realtime line chart
-- auto refresh
+- dynamic sensor series
 
 ## DeviceSelector
 - dropdown list of devices
+
+## SensorVisibilitySelector
+- checkbox list for available sensors
+- toggles visible cards and chart lines
 
 ---
 
 # Data Flow
 
-Frontend → REST API → Backend → Database
+Frontend → REST API + WebSocket → Backend → Database
 
 ---
 
