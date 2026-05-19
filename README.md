@@ -1,197 +1,95 @@
 # AgroNode
 
-AgroNode is a production-style IoT platform for greenhouse and agriculture monitoring.
+AgroNode is an IoT telemetry platform for greenhouse and agriculture monitoring.
 
-The platform collects real-time sensor data from ESP32 devices using MQTT and displays telemetry through a modern dashboard.
+It streams sensor data from ESP32 devices through MQTT, processes and stores telemetry in Go + PostgreSQL, and visualizes it in a React dashboard.
 
-Architecture:
+## Architecture
 
-ESP32 -> MQTT Broker -> Go Backend -> PostgreSQL -> React Frontend
+ESP32 -> Mosquitto MQTT -> Go Backend -> PostgreSQL -> React Frontend
 
----
+## Repository Layout
 
-# Features
-
-- Real-time sensor monitoring
-- MQTT communication
-- Temperature and humidity tracking
-- Multi-device support
-- REST API
-- PostgreSQL storage
-- Dockerized infrastructure
-- Responsive dashboard
-- Scalable architecture
-
----
-
-# Tech Stack
-
-## Firmware
-- ESP32
-- Arduino Framework
-- PubSubClient
-- DHT22
-
-## Backend
-- Go
-- Gin
-- GORM
-- PostgreSQL
-- Eclipse Paho MQTT
-
-## Frontend
-- React
-- TypeScript
-- Vite
-- Recharts
-
-## Infrastructure
-- Docker
-- Docker Compose
-- Eclipse Mosquitto
-
----
-
-# Project Structure
+This repository contains the project under `agronode/`.
 
 ```txt
-/agronode
-  /firmware
-  /backend
-  /frontend
-  /.github
-  docker-compose.yml
+agronode/
+      firmware/
+      backend/
+      frontend/
+      infra/
+      docs/
+      docker-compose.yml
 ```
 
----
+## Core Features
 
-# Architecture
+- MQTT telemetry ingestion (`agronode/{deviceId}/telemetry`)
+- REST API for historical and latest readings
+- WebSocket stream for live dashboard updates (`/ws/telemetry`)
+- PostgreSQL persistence with migrations
+- Docker Compose full-stack development environment
+
+## API Summary
+
+Base URL: `http://localhost:8080`
+
+- `GET /api/health`
+- `GET /api/data`
+- `GET /api/data/:deviceId`
+- `GET /api/latest/:deviceId`
+- `GET /ws/telemetry` (WebSocket)
+
+Full API details: `agronode/backend/docs/API.md`
+
+## MQTT Contract
+
+Topic:
 
 ```txt
-ESP32 Devices
-      ↓
-MQTT Broker (Mosquitto)
-      ↓
-Go Backend Subscriber
-      ↓
-PostgreSQL Database
-      ↓
-React Dashboard
+agronode/{deviceId}/telemetry
 ```
 
----
-
-# MQTT Topics
-
-Topic format:
-
-```txt
-weather/{deviceId}
-```
-
-Example:
-
-```txt
-weather/device-1
-```
-
-Payload example:
+Payload shape:
 
 ```json
 {
-  "temperature": 24.5,
-  "humidity": 60
+      "deviceId": "esp32-lab",
+      "timestamp": 1715539200,
+      "version": 1,
+      "sensors": {
+            "temperature": 24.5,
+            "humidity": 60,
+            "co2": 450
+      }
 }
 ```
 
----
+See full contract in `agronode/MQTT_CONTRACT.md`.
 
-# Backend API
-
-## Get all weather data
-
-```http
-GET /api/weather
-```
-
-## Get weather data by device
-
-```http
-GET /api/weather/:deviceId
-```
-
----
-
-# Getting Started
-
-## Clone repository
+## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/agronode.git
 cd agronode
-```
-
----
-
-# Run with Docker
-
-```bash
 docker compose up --build
 ```
 
----
+Services:
 
-# Services
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:8080`
+- MQTT: `localhost:1883`
+- PostgreSQL: `localhost:5432`
 
-| Service | Port |
-|---|---|
-| Frontend | 5173 |
-| Backend API | 8080 |
-| MQTT Broker | 1883 |
-| PostgreSQL | 5432 |
-
----
-
-# Environment Variables
-
-Example backend `.env`:
+## Environment (Backend)
 
 ```env
+APP_PORT=8080
 DB_HOST=postgres
 DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=postgres
 DB_NAME=agronode
-
 MQTT_BROKER=tcp://mosquitto:1883
-MQTT_TOPIC=weather/#
+MQTT_TOPIC=agronode/#
 ```
-
----
-
-# Future Improvements
-
-- Soil moisture monitoring
-- CO2 sensors
-- Alert system
-- Mobile application
-- AI analytics
-- Irrigation automation
-- Cloud deployment
-- Device authentication
-
----
-
-# Goals
-
-AgroNode aims to become a scalable smart agriculture platform suitable for:
-- greenhouses
-- farms
-- indoor growing systems
-- industrial agriculture monitoring
-
----
-
-# License
-
-MIT
