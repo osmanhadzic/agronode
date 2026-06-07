@@ -1,19 +1,20 @@
-import type { TelemetryReading } from '../types/telemetry'
+import type { DeviceStatusEvent, TelemetryReading } from '../types/telemetry'
 
-function resolveWebSocketUrl(): string {
+function resolveWebSocketUrl(path: string): string {
   const explicitApiBase = import.meta.env.VITE_API_BASE_URL
 
   if (explicitApiBase) {
     const normalized = explicitApiBase.replace(/^http/, 'ws')
-    return `${normalized}/ws/telemetry`
+    return `${normalized}${path}`
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${protocol}://${window.location.hostname}:8080/ws/telemetry`
+  return `${protocol}://${window.location.hostname}:8080${path}`
 }
 
-export function createTelemetrySocket(
-  onMessage: (reading: TelemetryReading) => void,
+function createSocket<T>(
+  path: string,
+  onMessage: (message: T) => void,
   onError?: () => void,
 ): () => void {
   let socket: WebSocket | null = null
@@ -25,12 +26,12 @@ export function createTelemetrySocket(
       return
     }
 
-    socket = new WebSocket(resolveWebSocketUrl())
+    socket = new WebSocket(resolveWebSocketUrl(path))
 
     socket.onmessage = (event) => {
       try {
-        const reading = JSON.parse(event.data) as TelemetryReading
-        onMessage(reading)
+        const message = JSON.parse(event.data) as T
+        onMessage(message)
       } catch {
       }
     }
@@ -61,4 +62,18 @@ export function createTelemetrySocket(
       socket.close()
     }
   }
+}
+
+export function createTelemetrySocket(
+  onMessage: (reading: TelemetryReading) => void,
+  onError?: () => void,
+): () => void {
+  return createSocket('/ws/telemetry', onMessage, onError)
+}
+
+export function createDeviceStatusSocket(
+  onMessage: (event: DeviceStatusEvent) => void,
+  onError?: () => void,
+): () => void {
+  return createSocket('/ws/devices', onMessage, onError)
 }

@@ -1,0 +1,3 @@
+ALTER TABLE devices
+ADD COLUMN IF NOT EXISTS desired_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS reported_state JSONB NOT NULL DEFAULT '{}'::jsonb;
