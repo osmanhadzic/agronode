@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchAllTelemetry } from '../api/telemetryApi'
 import { createTelemetrySocket } from '../api/telemetrySocket'
 import { TelemetryLineChart } from '../charts/TelemetryLineChart'
+import { DeviceMetaPanel } from '../components/DeviceMetaPanel'
 import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
 import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector'
@@ -209,6 +210,8 @@ export function DashboardPage() {
           />
         )}
       </header>
+
+      <DeviceMetaPanel meta={latestReading?.meta} />
 
       {isLoading && <p className="dashboard-message">Loading telemetry...</p>}
       {error && <p className="dashboard-message">{error}</p>}
