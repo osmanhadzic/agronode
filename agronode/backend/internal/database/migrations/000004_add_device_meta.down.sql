@@ -1,0 +1,2 @@
+ALTER TABLE sensor_data
+DROP COLUMN IF EXISTS meta;
