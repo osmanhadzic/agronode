@@ -26,15 +26,11 @@ services:
       - agronode-net
 
   backend:
-    image: golang:1.24-alpine
+    image: agronode-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: agronode-backend
-    working_dir: /app
-    command:
-      [
-        "sh",
-        "-c",
-        "export PATH=/usr/local/go/bin:$PATH && go mod download && go run ./cmd/api",
-      ]
     environment:
       APP_PORT: ${BACKEND_PORT:-8080}
       DB_HOST: ${DB_HOST:-postgres}
@@ -44,8 +40,6 @@ services:
       DB_NAME: ${DB_NAME:-agronode}
       MQTT_BROKER: ${MQTT_BROKER:-tcp://mosquitto:1883}
       MQTT_TOPIC: ${MQTT_TOPIC:-agronode/#}
-    volumes:
-      - ./backend:/app
     ports:
       - "8080:8080"
     depends_on:
@@ -55,17 +49,11 @@ services:
       - agronode-net
 
   frontend:
-    image: node:22-alpine
+    image: agronode-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: agronode-frontend
-    working_dir: /app
-    command:
-      [
-        "sh",
-        "-c",
-        "npm install && npm run dev -- --host 0.0.0.0 --port 5173",
-      ]
-    volumes:
-      - ./frontend:/app
     ports:
       - "5173:5173"
     depends_on:
