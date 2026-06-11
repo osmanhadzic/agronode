@@ -84,6 +84,15 @@ func (service *TelemetryService) HandleTelemetry(context context.Context, teleme
 		CreatedAt:   createdAt,
 	}
 
+	if telemetry.Meta != nil {
+		reading.Meta = &models.DeviceMeta{
+			Firmware: telemetry.Meta.Firmware,
+			IP:       telemetry.Meta.IP,
+			RSSI:     telemetry.Meta.RSSI,
+			Uptime:   telemetry.Meta.Uptime,
+		}
+	}
+
 	if err := service.ProcessTelemetry(context, reading); err != nil {
 		return err
 	}

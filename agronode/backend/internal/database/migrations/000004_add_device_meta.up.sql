@@ -1,0 +1,2 @@
+ALTER TABLE sensor_data
+ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb;

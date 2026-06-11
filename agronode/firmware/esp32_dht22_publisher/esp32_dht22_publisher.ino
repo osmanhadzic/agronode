@@ -9,10 +9,11 @@
 const char* WIFI_SSID = "hadzic";
 const char* WIFI_PASSWORD = "techno123";
 
-const char* MQTT_HOST = "192.168.193.104";
+const char* MQTT_HOST = "192.168.193.106";
 const uint16_t MQTT_PORT = 1883;
 
 const char* DEVICE_ID = "Plastenik-1";
+const char* FIRMWARE_VERSION = "1.0.1";
 const unsigned long PUBLISH_INTERVAL_MS = 5000;
 
 const long GMT_OFFSET_SEC = 0;
@@ -87,13 +88,19 @@ void ensureMqttConnected() {
 }
 
 bool publishTelemetry(float temperature, float humidity, unsigned long epochSeconds) {
-  char payload[256];
+  char payload[384];
   int length = snprintf(
     payload,
     sizeof(payload),
-    "{\"deviceId\":\"%s\",\"timestamp\":%lu,\"version\":1,\"sensors\":{\"temperature\":%.2f,\"humidity\":%.2f}}",
+    "{\"deviceId\":\"%s\",\"timestamp\":%lu,\"version\":1,"
+    "\"meta\":{\"fw\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"uptime\":%lu},"
+    "\"sensors\":{\"temperature\":%.2f,\"humidity\":%.2f}}",
     DEVICE_ID,
     epochSeconds,
+    FIRMWARE_VERSION,
+    WiFi.localIP().toString().c_str(),
+    (int)WiFi.RSSI(),
+    millis() / 1000UL,
     temperature,
     humidity
   );

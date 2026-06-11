@@ -25,11 +25,17 @@ func (repository *GormTelemetryRepository) Save(context context.Context, reading
 		return marshalError
 	}
 
+	metaJSON, marshalError := json.Marshal(reading.Meta)
+	if marshalError != nil {
+		return marshalError
+	}
+
 	entity := models.SensorData{
 		DeviceID:    reading.DeviceID,
 		Temperature: reading.Temperature,
 		Humidity:    reading.Humidity,
 		Sensors:     string(sensorsJSON),
+		Meta:        string(metaJSON),
 		CreatedAt:   reading.CreatedAt,
 	}
 
@@ -101,6 +107,7 @@ func (repository *GormTelemetryRepository) GetLatestByDeviceID(context context.C
 		Temperature: temperature,
 		Humidity:    humidity,
 		Sensors:     sensors,
+		Meta:        parseMeta(entity.Meta),
 		CreatedAt:   entity.CreatedAt,
 	}, nil
 }
@@ -125,6 +132,7 @@ func toReadings(entities []models.SensorData) []models.TelemetryReading {
 			Temperature: temperature,
 			Humidity:    humidity,
 			Sensors:     sensors,
+			Meta:        parseMeta(entity.Meta),
 			CreatedAt:   entity.CreatedAt,
 		})
 	}
@@ -144,6 +152,23 @@ func normalizeSensors(reading models.TelemetryReading) map[string]float64 {
 	}
 
 	return sensors
+}
+
+func parseMeta(raw string) *models.DeviceMeta {
+	if raw == "" || raw == "null" || raw == "{}" {
+		return nil
+	}
+
+	var meta models.DeviceMeta
+	if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+		return nil
+	}
+
+	if meta.Firmware == "" && meta.IP == "" && meta.RSSI == 0 && meta.Uptime == 0 {
+		return nil
+	}
+
+	return &meta
 }
 
 func parseSensors(raw string) map[string]float64 {

@@ -12,12 +12,20 @@ import (
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
+type DeviceMeta struct {
+	Firmware string `json:"fw"`
+	IP       string `json:"ip"`
+	RSSI     int    `json:"rssi"`
+	Uptime   uint64 `json:"uptime"`
+}
+
 type TelemetryEnvelope struct {
 	Topic           string
 	DeviceID        string
 	PayloadDeviceID string
 	Timestamp       int64
 	Sensors         map[string]float64
+	Meta            *DeviceMeta
 }
 
 type TelemetryConsumer interface {
@@ -28,6 +36,7 @@ type telemetryPayload struct {
 	DeviceID  string             `json:"deviceId"`
 	Timestamp int64              `json:"timestamp"`
 	Sensors   map[string]float64 `json:"sensors"`
+	Meta      *DeviceMeta        `json:"meta"`
 }
 
 type Client struct {
@@ -113,6 +122,7 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 		PayloadDeviceID: payload.DeviceID,
 		Timestamp:       payload.Timestamp,
 		Sensors:         payload.Sensors,
+		Meta:            payload.Meta,
 	}
 
 	if client.consumer == nil {
@@ -175,6 +185,13 @@ func parseTelemetryPayload(payloadBytes []byte) (telemetryPayload, error) {
 
 		for key, value := range sensors {
 			payload.Sensors[key] = value
+		}
+	}
+
+	if metaBytes, hasMeta := raw["meta"]; hasMeta {
+		var meta DeviceMeta
+		if err := json.Unmarshal(metaBytes, &meta); err == nil {
+			payload.Meta = &meta
 		}
 	}
 
