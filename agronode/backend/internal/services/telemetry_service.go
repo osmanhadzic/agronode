@@ -124,6 +124,62 @@ func (service *TelemetryService) GetTelemetryByDeviceID(context context.Context,
 	return service.repository.ListByDeviceID(context, deviceID)
 }
 
+func (service *TelemetryService) GetTelemetryByDeviceIDWithDateFilter(context context.Context, deviceID string, period string, startDate, endDate *time.Time) ([]models.TelemetryReading, error) {
+	if service.repository == nil {
+		return nil, errors.New("telemetry repository is not configured")
+	}
+
+	if strings.TrimSpace(deviceID) == "" {
+		return nil, fmt.Errorf("%w: device id is required", ErrValidation)
+	}
+
+	dateRange := calculateDateRange(period, startDate, endDate)
+	return service.repository.ListByDeviceIDWithDateRange(context, deviceID, dateRange)
+}
+
+func calculateDateRange(period string, startDate, endDate *time.Time) repositories.DateRange {
+	now := time.Now().UTC()
+	
+	switch period {
+	case "hour":
+		start := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, time.UTC)
+		end := start.Add(1 * time.Hour)
+		return repositories.DateRange{StartDate: &start, EndDate: &end}
+	
+	case "day":
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		end := start.Add(24 * time.Hour)
+		return repositories.DateRange{StartDate: &start, EndDate: &end}
+	
+	case "week":
+		// Start of week (Monday)
+		weekday := int(now.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		start := time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, time.UTC)
+		end := start.Add(7 * 24 * time.Hour)
+		return repositories.DateRange{StartDate: &start, EndDate: &end}
+	
+	case "month":
+		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+		end := start.AddDate(0, 1, 0)
+		return repositories.DateRange{StartDate: &start, EndDate: &end}
+	
+	case "year":
+		start := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+		end := start.AddDate(1, 0, 0)
+		return repositories.DateRange{StartDate: &start, EndDate: &end}
+	
+	case "custom":
+		return repositories.DateRange{StartDate: startDate, EndDate: endDate}
+	
+	default:
+		// No filter
+		return repositories.DateRange{}
+	}
+}
+
 func (service *TelemetryService) GetLatestTelemetryByDeviceID(context context.Context, deviceID string) (models.TelemetryReading, error) {
 	if service.repository == nil {
 		return models.TelemetryReading{}, errors.New("telemetry repository is not configured")
