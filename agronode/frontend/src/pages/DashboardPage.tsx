@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { fetchAllTelemetry, fetchDevices } from '../api/telemetryApi'
+import {
+  fetchAllTelemetry,
+  fetchDevices,
+  fetchTelemetryByDeviceId,
+  fetchLatestTelemetryByDeviceId,
+  type DateFilterPeriod,
+} from '../api/telemetryApi'
 import { createDeviceStatusSocket, createTelemetrySocket } from '../api/telemetrySocket'
 import { TelemetryLineChart } from '../charts/TelemetryLineChart'
+import { DateFilter } from '../components/DateFilter'
 import { DeviceMetaPanel } from '../components/DeviceMetaPanel'
 import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
@@ -12,10 +19,14 @@ import type { TelemetryReading } from '../types/telemetry'
 export function DashboardPage() {
   const [telemetry, setTelemetry] = useState<TelemetryReading[]>([])
   const [deviceStatuses, setDeviceStatuses] = useState<Record<string, string>>({})
+  const [latestDeviceReading, setLatestDeviceReading] = useState<TelemetryReading | null>(null)
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [selectedSensors, setSelectedSensors] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [dateFilterPeriod, setDateFilterPeriod] = useState<DateFilterPeriod>('')
+  const [customStartDate, setCustomStartDate] = useState<string>()
+  const [customEndDate, setCustomEndDate] = useState<string>()
 
   useEffect(() => {
     let isMounted = true
@@ -26,7 +37,18 @@ export function DashboardPage() {
 
       try {
         const [readings, devices] = await Promise.all([
-          fetchAllTelemetry(),
+          selectedDeviceId
+            ? fetchTelemetryByDeviceId(
+                selectedDeviceId,
+                dateFilterPeriod
+                  ? {
+                      period: dateFilterPeriod,
+                      startDate: customStartDate,
+                      endDate: customEndDate,
+                    }
+                  : undefined,
+              )
+            : fetchAllTelemetry(),
           fetchDevices(),
         ])
 
@@ -48,19 +70,22 @@ export function DashboardPage() {
             ...devices.map((device) => device.deviceId),
           ]),
         ]
-        const firstDeviceId = availableDeviceIds[0] ?? ''
 
-        setSelectedDeviceId((previous) => {
-          if (!previous) {
-            return firstDeviceId
+        if (!selectedDeviceId) {
+          setSelectedDeviceId(availableDeviceIds[0] ?? '')
+        }
+
+        // Fetch latest reading independently of the date filter so the cards
+        // and device metadata always show the current device state.
+        if (selectedDeviceId) {
+          const latest = await fetchLatestTelemetryByDeviceId(selectedDeviceId)
+
+          if (isMounted) {
+            setLatestDeviceReading(latest)
           }
-
-          if (!availableDeviceIds.includes(previous)) {
-            return firstDeviceId
-          }
-
-          return previous
-        })
+        } else {
+          setLatestDeviceReading(readings[0] ?? null)
+        }
 
         setError('')
       } catch {
@@ -86,22 +111,29 @@ export function DashboardPage() {
 
         setError('')
 
-        setTelemetry((previous) => {
-          const exists = previous.some(
-            (item) =>
-              item.deviceId === reading.deviceId &&
-              item.createdAt === reading.createdAt &&
-              item.temperature === reading.temperature &&
-              item.humidity === reading.humidity &&
-              JSON.stringify(item.sensors ?? {}) === JSON.stringify(reading.sensors ?? {}),
-          )
+        if (reading.deviceId === selectedDeviceId) {
+          setLatestDeviceReading(reading)
+        }
 
-          if (exists) {
-            return previous
-          }
+        // Do not inject live readings into a filtered historical dataset.
+        if (!dateFilterPeriod) {
+          setTelemetry((previous) => {
+            const exists = previous.some(
+              (item) =>
+                item.deviceId === reading.deviceId &&
+                item.createdAt === reading.createdAt &&
+                item.temperature === reading.temperature &&
+                item.humidity === reading.humidity &&
+                JSON.stringify(item.sensors ?? {}) === JSON.stringify(reading.sensors ?? {}),
+            )
 
-          return [reading, ...previous]
-        })
+            if (exists) {
+              return previous
+            }
+
+            return [reading, ...previous]
+          })
+        }
 
         setDeviceStatuses((previous) => ({
           ...previous,
@@ -142,11 +174,17 @@ export function DashboardPage() {
       cleanupSocket()
       cleanupDeviceStatusSocket()
     }
-  }, [])
+  }, [selectedDeviceId, dateFilterPeriod, customStartDate, customEndDate])
 
   const devices = useMemo(() => {
-    return [...new Set([...telemetry.map((reading) => reading.deviceId), ...Object.keys(deviceStatuses)])]
-  }, [telemetry, deviceStatuses])
+    return [
+      ...new Set([
+        ...telemetry.map((reading) => reading.deviceId),
+        ...Object.keys(deviceStatuses),
+        ...(selectedDeviceId ? [selectedDeviceId] : []),
+      ]),
+    ]
+  }, [telemetry, deviceStatuses, selectedDeviceId])
 
   const deviceTelemetry = useMemo(() => {
     if (!selectedDeviceId) {
@@ -167,6 +205,7 @@ export function DashboardPage() {
 
     for (const reading of deviceTelemetry) {
       const sensors = reading.sensors ?? {}
+
       for (const sensorKey of Object.keys(sensors)) {
         sensorSet.add(sensorKey)
       }
@@ -176,18 +215,18 @@ export function DashboardPage() {
   }, [deviceTelemetry])
 
   const latestSensors = useMemo(() => {
-    if (!latestReading) {
+    const reading = latestDeviceReading ?? latestReading
+
+    if (!reading) {
       return null
     }
 
-    const normalized: Record<string, number> = {
-      temperature: latestReading.temperature,
-      humidity: latestReading.humidity,
-      ...(latestReading.sensors ?? {}),
-    }
-
-    return normalized
-  }, [latestReading])
+    return {
+      temperature: reading.temperature,
+      humidity: reading.humidity,
+      ...(reading.sensors ?? {}),
+    } as Record<string, number>
+  }, [latestDeviceReading, latestReading])
 
   const visibleSensors = useMemo(() => {
     if (availableSensors.length === 0) {
@@ -246,17 +285,34 @@ export function DashboardPage() {
     })
   }
 
+  const handleDateFilterChange = (
+    period: DateFilterPeriod,
+    startDate?: string,
+    endDate?: string,
+  ) => {
+    setDateFilterPeriod(period)
+    setCustomStartDate(startDate)
+    setCustomEndDate(endDate)
+  }
+
   return (
     <main className="dashboard">
       <header className="dashboard-header">
         <div>
           <h1 className="dashboard-title">AgroNode Dashboard</h1>
+
           {selectedDeviceId && (
             <p className="device-status">
-              Status: <span className={`device-status-value device-status-${selectedDeviceStatus}`}>{selectedDeviceStatus}</span>
+              Status:{' '}
+              <span
+                className={`device-status-value device-status-${selectedDeviceStatus}`}
+              >
+                {selectedDeviceStatus}
+              </span>
             </p>
           )}
         </div>
+
         {devices.length > 0 && (
           <DeviceSelector
             devices={devices}
@@ -266,10 +322,11 @@ export function DashboardPage() {
         )}
       </header>
 
-      <DeviceMetaPanel meta={latestReading?.meta} />
+      <DeviceMetaPanel meta={latestDeviceReading?.meta} />
 
       {isLoading && <p className="dashboard-message">Loading telemetry...</p>}
       {error && <p className="dashboard-message">{error}</p>}
+
       {!isLoading && !error && devices.length === 0 && (
         <p className="dashboard-message">No telemetry data available</p>
       )}
@@ -291,7 +348,17 @@ export function DashboardPage() {
         ))}
       </section>
 
-      <TelemetryLineChart data={deviceTelemetry} selectedSensors={visibleSensors} />
+      {selectedDeviceId && (
+        <DateFilter
+          onFilterChange={handleDateFilterChange}
+          selectedPeriod={dateFilterPeriod}
+        />
+      )}
+
+      <TelemetryLineChart
+        data={deviceTelemetry}
+        selectedSensors={visibleSensors}
+      />
     </main>
   )
 }
