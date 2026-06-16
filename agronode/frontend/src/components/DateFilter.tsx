@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import type { DateFilterPeriod } from '../api/telemetryApi'
 
 interface DateFilterProps {
@@ -6,7 +6,7 @@ interface DateFilterProps {
   selectedPeriod: DateFilterPeriod
 }
 
-export function DateFilter({ onFilterChange, selectedPeriod }: DateFilterProps) {
+export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPeriod }: DateFilterProps) {
   const [showCustomRange, setShowCustomRange] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -196,4 +196,4 @@ export function DateFilter({ onFilterChange, selectedPeriod }: DateFilterProps) 
       `}</style>
     </div>
   )
-}
+})

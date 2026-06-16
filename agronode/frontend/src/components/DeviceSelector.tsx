@@ -1,10 +1,12 @@
+import { memo } from 'react'
+
 type DeviceSelectorProps = {
   devices: string[]
   selectedDeviceId: string
   onChange: (deviceId: string) => void
 }
 
-export function DeviceSelector({
+export const DeviceSelector = memo(function DeviceSelector({
   devices,
   selectedDeviceId,
   onChange,
@@ -25,4 +27,4 @@ export function DeviceSelector({
       </select>
     </div>
   )
-}
+})

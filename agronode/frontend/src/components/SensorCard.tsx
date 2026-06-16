@@ -1,10 +1,12 @@
+import { memo } from 'react'
+
 type SensorCardProps = {
   label: string
   value: number | null
   unit: string
 }
 
-export function SensorCard({ label, value, unit }: SensorCardProps) {
+export const SensorCard = memo(function SensorCard({ label, value, unit }: SensorCardProps) {
   const displayValue = value === null ? '--' : `${value.toFixed(1)} ${unit}`
 
   return (
@@ -13,4 +15,4 @@ export function SensorCard({ label, value, unit }: SensorCardProps) {
       <p className="sensor-value">{displayValue}</p>
     </article>
   )
-}
+})

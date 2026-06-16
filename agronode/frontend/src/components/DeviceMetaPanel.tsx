@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { DeviceMeta } from '../types/telemetry'
 
 type DeviceMetaPanelProps = {
@@ -19,7 +20,7 @@ function rssiLabel(rssi: number): string {
   return 'Weak'
 }
 
-export function DeviceMetaPanel({ meta }: DeviceMetaPanelProps) {
+export const DeviceMetaPanel = memo(function DeviceMetaPanel({ meta }: DeviceMetaPanelProps) {
   if (!meta) return null
 
   const items: { label: string; value: string }[] = []
@@ -43,4 +44,4 @@ export function DeviceMetaPanel({ meta }: DeviceMetaPanelProps) {
       ))}
     </section>
   )
-}
+})
