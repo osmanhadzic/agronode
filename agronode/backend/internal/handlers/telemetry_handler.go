@@ -16,6 +16,7 @@ import (
 type TelemetryQueryService interface {
 	GetAllTelemetry(context.Context) ([]models.TelemetryReading, error)
 	GetTelemetryByDeviceID(context.Context, string) ([]models.TelemetryReading, error)
+	GetTelemetryByDeviceIDWithDateFilter(context.Context, string, string, *time.Time, *time.Time) ([]models.TelemetryReading, error)
 	GetLatestTelemetryByDeviceID(context.Context, string) (models.TelemetryReading, error)
 }
 
@@ -53,8 +54,48 @@ func (handler *telemetryHandler) getAllData(context *gin.Context) {
 
 func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 	deviceID := context.Param("deviceId")
+	
+	// Query parameters for date filtering
+	period := context.Query("period") // day, week, month, year, custom
+	startDateStr := context.Query("startDate")
+	endDateStr := context.Query("endDate")
 
-	readings, err := handler.service.GetTelemetryByDeviceID(context.Request.Context(), deviceID)
+	var readings []models.TelemetryReading
+	var err error
+
+	// If period or date range is specified, use filtered query
+	if period != "" || startDateStr != "" || endDateStr != "" {
+		var startDate, endDate *time.Time
+		
+		if startDateStr != "" {
+			parsed, parseErr := time.Parse(time.RFC3339, startDateStr)
+			if parseErr != nil {
+				context.JSON(http.StatusBadRequest, gin.H{"error": "invalid startDate format, use RFC3339"})
+				return
+			}
+			startDate = &parsed
+		}
+		
+		if endDateStr != "" {
+			parsed, parseErr := time.Parse(time.RFC3339, endDateStr)
+			if parseErr != nil {
+				context.JSON(http.StatusBadRequest, gin.H{"error": "invalid endDate format, use RFC3339"})
+				return
+			}
+			endDate = &parsed
+		}
+		
+		readings, err = handler.service.GetTelemetryByDeviceIDWithDateFilter(
+			context.Request.Context(), 
+			deviceID, 
+			period, 
+			startDate, 
+			endDate,
+		)
+	} else {
+		readings, err = handler.service.GetTelemetryByDeviceID(context.Request.Context(), deviceID)
+	}
+
 	if err != nil {
 		handler.logger.Error("get telemetry by device failed", "deviceId", deviceID, "error", err)
 		if errors.Is(err, services.ErrValidation) {

@@ -76,6 +76,26 @@ func (repository *GormTelemetryRepository) ListByDeviceID(context context.Contex
 	return toReadings(entities), nil
 }
 
+func (repository *GormTelemetryRepository) ListByDeviceIDWithDateRange(context context.Context, deviceID string, dateRange DateRange) ([]models.TelemetryReading, error) {
+	var entities []models.SensorData
+	query := repository.database.WithContext(context).Where("device_id = ?", deviceID)
+
+	if dateRange.StartDate != nil {
+		query = query.Where("created_at >= ?", *dateRange.StartDate)
+	}
+
+	if dateRange.EndDate != nil {
+		query = query.Where("created_at <= ?", *dateRange.EndDate)
+	}
+
+	err := query.Order("created_at DESC").Find(&entities).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return toReadings(entities), nil
+}
+
 func (repository *GormTelemetryRepository) GetLatestByDeviceID(context context.Context, deviceID string) (models.TelemetryReading, error) {
 	var entity models.SensorData
 	err := repository.database.WithContext(context).
