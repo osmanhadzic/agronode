@@ -14,6 +14,37 @@ agronode/device-1/telemetry
 
 ---
 
+## Activation Topic (Backend -> Device)
+
+When a trigger is reached, backend publishes activation commands to:
+
+```txt
+agronode/{deviceId}/activation
+```
+
+Payload format:
+
+```json
+{
+  "deviceId": "device-1",
+  "trigger": "above_max",
+  "sensor": "co2",
+  "limitType": "max",
+  "value": 17.8,
+  "threshold": 18,
+  "activated": true,
+  "timestamp": 1715539200
+}
+```
+
+ESP32 behavior:
+
+- Device subscribes to `agronode/{deviceId}/activation`
+- When payload contains `"activated": true` for matching `deviceId`, device sets activation output pin HIGH
+- Activation pin is auto-reset to LOW after 5 seconds (firmware default)
+
+---
+
 ## Payload Format
 
 All devices MUST send data in this format:

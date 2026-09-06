@@ -39,21 +39,62 @@ type telemetryPayload struct {
 	Meta      *DeviceMeta        `json:"meta"`
 }
 
-type Client struct {
-	brokerURL string
-	topic     string
-	logger    *slog.Logger
-	consumer  TelemetryConsumer
-	client    paho.Client
+type ActivationCommand struct {
+	DeviceID  string  `json:"deviceId"`
+	Trigger   string  `json:"trigger"`
+	Sensor    string  `json:"sensor"`
+	LimitType string  `json:"limitType"`
+	Value     float64 `json:"value"`
+	Threshold float64 `json:"threshold"`
+	Activated bool    `json:"activated"`
+	Timestamp int64   `json:"timestamp"`
 }
 
-func NewClient(brokerURL, topic string, logger *slog.Logger, consumer TelemetryConsumer) *Client {
+type Client struct {
+	brokerURL               string
+	topic                   string
+	activationTopicTemplate string
+	logger                  *slog.Logger
+	consumer                TelemetryConsumer
+	client                  paho.Client
+}
+
+func NewClient(brokerURL, topic, activationTopicTemplate string, logger *slog.Logger, consumer TelemetryConsumer) *Client {
 	return &Client{
-		brokerURL: brokerURL,
-		topic:     topic,
-		logger:    logger,
-		consumer:  consumer,
+		brokerURL:               brokerURL,
+		topic:                   topic,
+		activationTopicTemplate: activationTopicTemplate,
+		logger:                  logger,
+		consumer:                consumer,
 	}
+}
+
+func (client *Client) PublishActivationCommand(_ context.Context, command ActivationCommand) error {
+	if strings.TrimSpace(command.DeviceID) == "" {
+		return fmt.Errorf("device id is required")
+	}
+
+	if client.client == nil || !client.client.IsConnected() {
+		return fmt.Errorf("mqtt client is not connected")
+	}
+
+	topic := fmt.Sprintf(client.activationTopicTemplate, command.DeviceID)
+	payloadBytes, err := json.Marshal(command)
+	if err != nil {
+		return fmt.Errorf("marshal activation command: %w", err)
+	}
+
+	token := client.client.Publish(topic, 1, false, payloadBytes)
+	token.Wait()
+	if token.Error() != nil {
+		return fmt.Errorf("publish activation command: %w", token.Error())
+	}
+
+	if client.logger != nil {
+		client.logger.Info("mqtt activation command published", "topic", topic, "deviceId", command.DeviceID, "trigger", command.Trigger)
+	}
+
+	return nil
 }
 
 func (client *Client) Run(runContext context.Context) error {
