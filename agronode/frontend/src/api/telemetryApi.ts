@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 import { httpClient } from './httpClient'
-import type { TelemetryReading } from '../types/telemetry'
+import type { DeviceSummary, TelemetryReading } from '../types/telemetry'
 
 export async function fetchAllTelemetry(): Promise<TelemetryReading[]> {
   const { data } = await httpClient.get<TelemetryReading[]>('/api/data')
@@ -30,4 +30,9 @@ export async function fetchLatestTelemetryByDeviceId(
 
     throw error
   }
+}
+
+export async function fetchDevices(): Promise<DeviceSummary[]> {
+  const { data } = await httpClient.get<DeviceSummary[]>('/api/devices')
+  return data
 }

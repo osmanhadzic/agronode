@@ -17,6 +17,29 @@
   font-size: 28px;
 }
 
+.device-status {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #4b5563;
+}
+
+.device-status-value {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.device-status-online {
+  color: #166534;
+}
+
+.device-status-offline {
+  color: #991b1b;
+}
+
+.device-status-unknown {
+  color: #6b7280;
+}
+
 .device-selector {
   display: flex;
   align-items: center;

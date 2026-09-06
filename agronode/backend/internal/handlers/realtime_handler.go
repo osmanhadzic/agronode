@@ -13,6 +13,8 @@ import (
 type TelemetryRealtimeHub interface {
 	Subscribe() chan models.TelemetryReading
 	Unsubscribe(chan models.TelemetryReading)
+	SubscribeDeviceEvents() chan models.DeviceStatusEvent
+	UnsubscribeDeviceEvents(chan models.DeviceStatusEvent)
 }
 
 type realtimeHandler struct {
@@ -35,6 +37,7 @@ func RegisterRealtimeRoutes(router *gin.Engine, logger *slog.Logger, hub Telemet
 	}
 
 	router.GET("/ws/telemetry", handler.streamTelemetry)
+	router.GET("/ws/devices", handler.streamDeviceEvents)
 }
 
 func (handler *realtimeHandler) streamTelemetry(context *gin.Context) {
@@ -76,7 +79,52 @@ func (handler *realtimeHandler) streamTelemetry(context *gin.Context) {
 				return
 			}
 		case <-pingTicker.C:
-			case <-pingTicker.C:
+			if err := connection.WriteMessage(websocket.PingMessage, []byte("ping")); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (handler *realtimeHandler) streamDeviceEvents(context *gin.Context) {
+	if handler.hub == nil {
+		context.JSON(http.StatusServiceUnavailable, gin.H{"error": "realtime hub unavailable"})
+		return
+	}
+
+	connection, err := handler.upgrader.Upgrade(context.Writer, context.Request, nil)
+	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("websocket upgrade failed", "error", err)
+		}
+		return
+	}
+
+	connection.SetReadLimit(1024)
+	connection.SetReadDeadline(time.Now().Add(60 * time.Second))
+	connection.SetPongHandler(func(string) error {
+		connection.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	channel := handler.hub.SubscribeDeviceEvents()
+	defer handler.hub.UnsubscribeDeviceEvents(channel)
+	defer connection.Close()
+
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	for {
+		select {
+		case event, ok := <-channel:
+			if !ok {
+				return
+			}
+
+			if writeErr := connection.WriteJSON(event); writeErr != nil {
+				return
+			}
+		case <-pingTicker.C:
 			if err := connection.WriteMessage(websocket.PingMessage, []byte("ping")); err != nil {
 				return
 			}

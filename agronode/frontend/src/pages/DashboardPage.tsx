@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { fetchAllTelemetry } from '../api/telemetryApi'
-import { createTelemetrySocket } from '../api/telemetrySocket'
+import { fetchAllTelemetry, fetchDevices } from '../api/telemetryApi'
+import { createDeviceStatusSocket, createTelemetrySocket } from '../api/telemetrySocket'
 import { TelemetryLineChart } from '../charts/TelemetryLineChart'
 import { DeviceMetaPanel } from '../components/DeviceMetaPanel'
 import { DeviceSelector } from '../components/DeviceSelector'
@@ -11,6 +11,7 @@ import type { TelemetryReading } from '../types/telemetry'
 
 export function DashboardPage() {
   const [telemetry, setTelemetry] = useState<TelemetryReading[]>([])
+  const [deviceStatuses, setDeviceStatuses] = useState<Record<string, string>>({})
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [selectedSensors, setSelectedSensors] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -24,14 +25,29 @@ export function DashboardPage() {
       setError('')
 
       try {
-        const readings = await fetchAllTelemetry()
+        const [readings, devices] = await Promise.all([
+          fetchAllTelemetry(),
+          fetchDevices(),
+        ])
+
         if (!isMounted) {
           return
         }
 
         setTelemetry(readings)
 
-        const availableDeviceIds = [...new Set(readings.map((reading) => reading.deviceId))]
+        const initialStatuses = devices.reduce<Record<string, string>>((result, device) => {
+          result[device.deviceId] = device.status
+          return result
+        }, {})
+        setDeviceStatuses(initialStatuses)
+
+        const availableDeviceIds = [
+          ...new Set([
+            ...readings.map((reading) => reading.deviceId),
+            ...devices.map((device) => device.deviceId),
+          ]),
+        ]
         const firstDeviceId = availableDeviceIds[0] ?? ''
 
         setSelectedDeviceId((previous) => {
@@ -86,6 +102,33 @@ export function DashboardPage() {
 
           return [reading, ...previous]
         })
+
+        setDeviceStatuses((previous) => ({
+          ...previous,
+          [reading.deviceId]: 'online',
+        }))
+
+        setSelectedDeviceId((previous) => previous || reading.deviceId)
+      },
+      () => {
+        if (isMounted) {
+          setError('Realtime connection lost. Reconnecting...')
+        }
+      },
+    )
+
+    const cleanupDeviceStatusSocket = createDeviceStatusSocket(
+      (event) => {
+        if (!isMounted) {
+          return
+        }
+
+        setDeviceStatuses((previous) => ({
+          ...previous,
+          [event.deviceId]: event.newStatus,
+        }))
+
+        setSelectedDeviceId((previous) => previous || event.deviceId)
       },
       () => {
         if (isMounted) {
@@ -97,12 +140,13 @@ export function DashboardPage() {
     return () => {
       isMounted = false
       cleanupSocket()
+      cleanupDeviceStatusSocket()
     }
   }, [])
 
   const devices = useMemo(() => {
-    return [...new Set(telemetry.map((reading) => reading.deviceId))]
-  }, [telemetry])
+    return [...new Set([...telemetry.map((reading) => reading.deviceId), ...Object.keys(deviceStatuses)])]
+  }, [telemetry, deviceStatuses])
 
   const deviceTelemetry = useMemo(() => {
     if (!selectedDeviceId) {
@@ -113,6 +157,10 @@ export function DashboardPage() {
   }, [selectedDeviceId, telemetry])
 
   const latestReading = deviceTelemetry[0] ?? null
+
+  const selectedDeviceStatus = selectedDeviceId
+    ? deviceStatuses[selectedDeviceId] ?? 'unknown'
+    : 'unknown'
 
   const availableSensors = useMemo(() => {
     const sensorSet = new Set<string>(['temperature', 'humidity'])
@@ -201,7 +249,14 @@ export function DashboardPage() {
   return (
     <main className="dashboard">
       <header className="dashboard-header">
-        <h1 className="dashboard-title">AgroNode Dashboard</h1>
+        <div>
+          <h1 className="dashboard-title">AgroNode Dashboard</h1>
+          {selectedDeviceId && (
+            <p className="device-status">
+              Status: <span className={`device-status-value device-status-${selectedDeviceStatus}`}>{selectedDeviceStatus}</span>
+            </p>
+          )}
+        </div>
         {devices.length > 0 && (
           <DeviceSelector
             devices={devices}

@@ -206,6 +206,147 @@ STATUS: DONE
 
 ---
 
+# ⚙️ EPIC 6: DEVICE REGISTRY
+
+## AGN-21: Create devices database schema
+- Create devices table
+- Add unique device_id
+- Add timestamps
+- Add status field
+- Add firmware_version field
+
+STATUS: DONE
+
+---
+
+## AGN-22: Create device entity/model
+- Create Device entity/model
+- Add validation rules
+- Add serialization support
+
+STATUS: DONE
+
+---
+
+## AGN-23: Implement device registration API
+- Create POST /api/devices/register
+- Validate payload
+- Implement idempotent registration
+
+STATUS: DONE
+
+---
+
+## AGN-24: Implement get device API
+- Create GET /api/devices/:deviceId
+- Return device details
+- Handle 404 errors
+
+STATUS: DONE
+
+---
+
+## AGN-25: Implement list devices API
+- Create GET /api/devices
+- Add pagination
+- Add filtering
+- Add search support
+
+STATUS: DONE
+
+---
+
+## AGN-26: MQTT telemetry presence integration
+- Subscribe to telemetry topics
+- Extract deviceId
+- Update lastSeen
+- Mark device online
+
+STATUS: DONE
+
+---
+
+## AGN-27: Implement offline detection worker
+- Create scheduled worker/cron
+- Add inactivity threshold
+- Mark inactive devices offline
+
+STATUS: DONE
+
+---
+
+## AGN-28: Add device status events
+- Emit device.online event
+- Emit device.offline event
+- Prevent duplicate events
+
+STATUS: DONE
+
+---
+
+## AGN-29: Add device metadata support
+- Support battery metadata
+- Support signal_strength metadata
+- Support hardware metadata
+
+STATUS: DONE
+
+---
+
+## AGN-30: Implement dynamic sensor discovery
+- Parse sensor keys dynamically
+- Store discovered sensors
+- Avoid hardcoded sensor types
+
+STATUS: DONE
+
+---
+
+## AGN-31: Prepare device authentication support
+- Add api_key field
+- Add provisioning_token field
+- Add hashing support
+
+STATUS: DONE
+
+---
+
+## AGN-32: Implement real-time device presence updates
+- Add WebSocket support
+- Broadcast online/offline changes
+- Sync frontend dashboard
+
+STATUS: DONE
+
+---
+
+## AGN-33: Add device audit logging
+- Log registrations
+- Log status changes
+- Log firmware updates
+
+STATUS: DONE
+
+---
+
+## AGN-34: Add device tags support
+- Add tags field
+- Support filtering by tags
+- Support multiple tags
+
+STATUS: DONE
+
+---
+
+## AGN-35: Prepare device shadow support
+- Add desired_state field
+- Add reported_state field
+- Prepare future sync architecture
+
+STATUS: DONE
+
+---
+
 # 🤖 COPILOT EXECUTION MODE
 
 Use this workflow:
