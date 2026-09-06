@@ -47,9 +47,11 @@ func main() {
 
 	store := database.NewStore(databaseConnection)
 	telemetryRepository := repositories.NewGormTelemetryRepository(store.DB)
+	triggerRepository := repositories.NewGormTriggerRepository(store.DB)
 	telemetryService := services.NewTelemetryService(telemetryRepository, logger)
 	deviceRepository := repositories.NewGormDeviceRepository(store.DB)
 	deviceService := services.NewDeviceService(deviceRepository, logger)
+	telemetryService.SetTriggerRepository(triggerRepository)
 	realtimeHub := realtime.NewHub(logger)
 	telemetryService.SetBroadcaster(realtimeHub)
 	telemetryService.SetPresenceUpdater(deviceService)
@@ -59,7 +61,8 @@ func main() {
 	appContext, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
-	mqttClient := mqtt.NewClient(cfg.MQTTBroker, cfg.MQTTTopic, logger, telemetryService)
+	mqttClient := mqtt.NewClient(cfg.MQTTBroker, cfg.MQTTTopic, cfg.MQTTActivationTopicTemplate, logger, telemetryService)
+	telemetryService.SetTriggerPublisher(mqttClient)
 	mqttErrorChannel := make(chan error, 1)
 
 	go func() {
@@ -68,7 +71,7 @@ func main() {
 		}
 	}()
 
-	router := server.NewRouter(logger, telemetryService, deviceService, realtimeHub)
+	router := server.NewRouter(logger, telemetryService, telemetryService, deviceService, realtimeHub)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.AppPort,
 		Handler:           router,

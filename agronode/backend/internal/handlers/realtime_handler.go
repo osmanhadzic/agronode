@@ -70,6 +70,8 @@ func (handler *realtimeHandler) streamTelemetry(context *gin.Context) {
 
 	for {
 		select {
+		case <-context.Request.Context().Done():
+			return
 		case reading, ok := <-channel:
 			if !ok {
 				return
