@@ -45,14 +45,17 @@ func main() {
 
 	store := database.NewStore(databaseConnection)
 	telemetryRepository := repositories.NewGormTelemetryRepository(store.DB)
+	triggerRepository := repositories.NewGormTriggerRepository(store.DB)
 	telemetryService := services.NewTelemetryService(telemetryRepository, logger)
+	telemetryService.SetTriggerRepository(triggerRepository)
 	realtimeHub := realtime.NewHub(logger)
 	telemetryService.SetBroadcaster(realtimeHub)
 
 	appContext, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
-	mqttClient := mqtt.NewClient(cfg.MQTTBroker, cfg.MQTTTopic, logger, telemetryService)
+	mqttClient := mqtt.NewClient(cfg.MQTTBroker, cfg.MQTTTopic, cfg.MQTTActivationTopicTemplate, logger, telemetryService)
+	telemetryService.SetTriggerPublisher(mqttClient)
 	mqttErrorChannel := make(chan error, 1)
 
 	go func() {
@@ -61,7 +64,7 @@ func main() {
 		}
 	}()
 
-	router := server.NewRouter(logger, telemetryService, realtimeHub)
+	router := server.NewRouter(logger, telemetryService, telemetryService, realtimeHub)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.AppPort,
 		Handler:           router,

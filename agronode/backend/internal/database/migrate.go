@@ -22,6 +22,7 @@ var orderedMigrations = []migration{
 	{Version: "000002", File: "migrations/000002_deduplicate_sensor_data_and_add_unique_index.up.sql"},
 	{Version: "000003", File: "migrations/000003_add_flexible_sensors_jsonb.up.sql"},
 	{Version: "000004", File: "migrations/000004_add_device_meta.up.sql"},
+	{Version: "000005", File: "migrations/000005_create_sensor_triggers.up.sql"},
 }
 
 func RunMigrations(context context.Context, db *gorm.DB, logger *slog.Logger) error {

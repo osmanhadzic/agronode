@@ -67,6 +67,8 @@ func (handler *realtimeHandler) streamTelemetry(context *gin.Context) {
 
 	for {
 		select {
+		case <-context.Request.Context().Done():
+			return
 		case reading, ok := <-channel:
 			if !ok {
 				return
@@ -76,7 +78,6 @@ func (handler *realtimeHandler) streamTelemetry(context *gin.Context) {
 				return
 			}
 		case <-pingTicker.C:
-			case <-pingTicker.C:
 			if err := connection.WriteMessage(websocket.PingMessage, []byte("ping")); err != nil {
 				return
 			}

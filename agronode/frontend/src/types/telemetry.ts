@@ -13,3 +13,21 @@ export interface TelemetryReading {
   meta?: DeviceMeta
   createdAt: string
 }
+
+export interface SensorTrigger {
+  deviceId: string
+  sensor: string
+  min?: number
+  max?: number
+}
+
+export interface TriggerListItem {
+  sensor: string
+  min?: number
+  max?: number
+}
+
+export interface TriggerListResponse {
+  deviceId: string
+  triggers: TriggerListItem[]
+}
