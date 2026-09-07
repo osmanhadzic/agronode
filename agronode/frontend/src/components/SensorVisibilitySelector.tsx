@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 type SensorVisibilitySelectorProps = {
   sensors: string[]
   selectedSensors: string[]
@@ -15,7 +17,7 @@ function toSensorLabel(sensorKey: string): string {
     .join(' ')
 }
 
-export function SensorVisibilitySelector({
+export const SensorVisibilitySelector = memo(function SensorVisibilitySelector({
   sensors,
   selectedSensors,
   onToggleSensor,
@@ -45,4 +47,4 @@ export function SensorVisibilitySelector({
       </div>
     </section>
   )
-}
+})
