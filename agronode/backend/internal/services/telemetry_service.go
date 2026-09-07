@@ -14,9 +14,11 @@ import (
 )
 
 type TelemetryService struct {
-	repository repositories.TelemetryRepository
-	logger     *slog.Logger
-	broadcaster TelemetryBroadcaster
+	repository            repositories.TelemetryRepository
+	logger                *slog.Logger
+	broadcaster           TelemetryBroadcaster
+	presenceUpdater       DevicePresenceUpdater
+	sensorDiscoveryUpdater DeviceSensorDiscoveryUpdater
 }
 
 var ErrValidation = errors.New("telemetry validation failed")
@@ -34,6 +36,14 @@ func NewTelemetryService(repository repositories.TelemetryRepository, logger *sl
 
 func (service *TelemetryService) SetBroadcaster(broadcaster TelemetryBroadcaster) {
 	service.broadcaster = broadcaster
+}
+
+func (service *TelemetryService) SetPresenceUpdater(updater DevicePresenceUpdater) {
+	service.presenceUpdater = updater
+}
+
+func (service *TelemetryService) SetSensorDiscoveryUpdater(updater DeviceSensorDiscoveryUpdater) {
+	service.sensorDiscoveryUpdater = updater
 }
 
 func (service *TelemetryService) ProcessTelemetry(context context.Context, reading models.TelemetryReading) error {
@@ -95,6 +105,31 @@ func (service *TelemetryService) HandleTelemetry(context context.Context, teleme
 
 	if err := service.ProcessTelemetry(context, reading); err != nil {
 		return err
+	}
+
+	if service.presenceUpdater != nil {
+		if err := service.presenceUpdater.UpdatePresence(context, reading.DeviceID, reading.CreatedAt); err != nil {
+			if !errors.Is(err, repositories.ErrDeviceNotFound) {
+				if service.logger != nil {
+					service.logger.Warn("device presence update failed", "deviceId", reading.DeviceID, "error", err)
+				}
+			} else if service.logger != nil {
+				service.logger.Warn("device presence skipped: device not registered", "deviceId", reading.DeviceID)
+			}
+		}
+	}
+
+	if service.sensorDiscoveryUpdater != nil {
+		sensorNames := make([]string, 0, len(telemetry.Sensors))
+		for key := range telemetry.Sensors {
+			sensorNames = append(sensorNames, key)
+		}
+
+		if err := service.sensorDiscoveryUpdater.UpdateDiscoveredSensors(context, reading.DeviceID, sensorNames); err != nil {
+			if service.logger != nil {
+				service.logger.Warn("device sensor discovery update failed", "deviceId", reading.DeviceID, "error", err)
+			}
+		}
 	}
 
 	if service.logger != nil {
