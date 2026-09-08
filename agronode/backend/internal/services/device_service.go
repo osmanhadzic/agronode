@@ -66,12 +66,16 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 		return nil, err
 	}
 
+	normalizedTags := normalizeTags(tags)
+	if normalizedTags == nil {
+		normalizedTags = []string{}
+	}
+
 	if err := validateDeviceMetadata(metadata); err != nil {
 		return nil, err
 	}
 
 	normalizedFirmware := strings.TrimSpace(firmwareVersion)
-	normalizedTags := normalizeTags(tags)
 
 	existingDevice, err := service.repository.GetByDeviceID(ctx, deviceID)
 	if err != nil && !errors.Is(err, repositories.ErrDeviceNotFound) {

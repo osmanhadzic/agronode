@@ -28,6 +28,20 @@ func (stub *devicePresenceUpdaterStub) UpdatePresence(_ context.Context, deviceI
 	return stub.err
 }
 
+type triggerPublisherStub struct {
+	commands []mqtt.ActivationCommand
+	err      error
+}
+
+func (publisher *triggerPublisherStub) PublishActivationCommand(_ context.Context, command mqtt.ActivationCommand) error {
+	if publisher.err != nil {
+		return publisher.err
+	}
+
+	publisher.commands = append(publisher.commands, command)
+	return nil
+}
+
 func (repository *telemetryRepositoryStub) Save(_ context.Context, reading models.TelemetryReading) error {
 	if repository.saveError != nil {
 		return repository.saveError
@@ -41,6 +55,10 @@ func (repository *telemetryRepositoryStub) List(context.Context) ([]models.Telem
 }
 
 func (repository *telemetryRepositoryStub) ListByDeviceID(context.Context, string) ([]models.TelemetryReading, error) {
+	return nil, nil
+}
+
+func (repository *telemetryRepositoryStub) ListByDeviceIDWithDateRange(_ context.Context, _ string, _ repositories.DateRange) ([]models.TelemetryReading, error) {
 	return nil, nil
 }
 
@@ -88,7 +106,10 @@ func TestTelemetryService_ProcessTelemetry(t *testing.T) {
 			DeviceID:    "   ",
 			Temperature: 24.5,
 			Humidity:    60,
-			CreatedAt:   time.Now().UTC(),
+			Sensors: map[string]float64{
+				"temperature": 24.5,
+			},
+			CreatedAt: time.Now().UTC(),
 		})
 
 		if !errors.Is(err, ErrValidation) {
@@ -148,9 +169,73 @@ func TestTelemetryService_HandleTelemetry_Presence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
+	})
+}
+
+func TestTelemetryService_SetSensorTrigger(t *testing.T) {
+	t.Run("rejects invalid min max combination", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		service := NewTelemetryService(repository, nil)
+
+		minValue := 30.0
+		maxValue := 20.0
+		err := service.SetSensorTrigger(context.Background(), "esp32-lab", "temperature", models.SensorTrigger{
+			Min: &minValue,
+			Max: &maxValue,
+		})
+
+		if !errors.Is(err, ErrValidation) {
+			t.Fatalf("expected ErrValidation, got %v", err)
+		}
+	})
+
+	t.Run("stores and returns trigger", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		service := NewTelemetryService(repository, nil)
+
+		minValue := 10.0
+		maxValue := 50.0
+		err := service.SetSensorTrigger(context.Background(), "esp32-lab", "humidity", models.SensorTrigger{
+			Min: &minValue,
+			Max: &maxValue,
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
 
 		if len(repository.saved) != 1 {
 			t.Fatalf("expected telemetry to be saved once, got %d", len(repository.saved))
+		}
+
+		trigger, err := service.GetSensorTrigger(context.Background(), "esp32-lab", "humidity")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if trigger.Min == nil || *trigger.Min != minValue {
+			t.Fatalf("expected min %v, got %v", minValue, trigger.Min)
+		}
+
+		if trigger.Max == nil || *trigger.Max != maxValue {
+			t.Fatalf("expected max %v, got %v", maxValue, trigger.Max)
+		}
+	})
+
+	t.Run("returns not found for missing sensor on existing device", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		service := NewTelemetryService(repository, nil)
+
+		maxValue := 70.0
+		err := service.SetSensorTrigger(context.Background(), "esp32-lab", "humidity", models.SensorTrigger{
+			Max: &maxValue,
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		_, err = service.GetSensorTrigger(context.Background(), "esp32-lab", "temperature")
+		if !errors.Is(err, repositories.ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
 		}
 	})
 }
@@ -187,4 +272,57 @@ func TestTelemetryService_HandleTelemetry_Discovery(t *testing.T) {
 			t.Fatalf("expected 4 discovered sensors, got %v", discoveryUpdater.updatedSensors)
 		}
 	})
+}
+
+func TestTelemetryService_GenericTriggerActivation(t *testing.T) {
+	repository := &telemetryRepositoryStub{}
+	publisher := &triggerPublisherStub{}
+	service := NewTelemetryService(repository, nil)
+	service.SetTriggerPublisher(publisher)
+
+	maxValue := 700.0
+	err := service.SetSensorTrigger(context.Background(), "esp32-lab", "co2", models.SensorTrigger{Max: &maxValue})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	now := time.Now().UTC()
+	firstReading := models.TelemetryReading{
+		DeviceID: "esp32-lab",
+		Sensors: map[string]float64{
+			"co2":         800,
+			"temperature": 24,
+		},
+		CreatedAt: now,
+	}
+
+	if err := service.ProcessTelemetry(context.Background(), firstReading); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if len(publisher.commands) != 1 {
+		t.Fatalf("expected 1 activation command, got %d", len(publisher.commands))
+	}
+
+	command := publisher.commands[0]
+	if command.Sensor != "co2" || command.Trigger != "above_max" || command.LimitType != "max" {
+		t.Fatalf("unexpected command: %+v", command)
+	}
+
+	secondReading := models.TelemetryReading{
+		DeviceID: "esp32-lab",
+		Sensors: map[string]float64{
+			"co2":         810,
+			"temperature": 24,
+		},
+		CreatedAt: now.Add(1 * time.Second),
+	}
+
+	if err := service.ProcessTelemetry(context.Background(), secondReading); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if len(publisher.commands) != 1 {
+		t.Fatalf("expected still 1 activation command while above max, got %d", len(publisher.commands))
+	}
 }

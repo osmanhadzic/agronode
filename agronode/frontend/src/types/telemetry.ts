@@ -36,3 +36,21 @@ export interface DeviceStatusEvent {
   eventType: 'device.online' | 'device.offline' | string
   timestamp: string
 }
+
+export interface SensorTrigger {
+  deviceId: string
+  sensor: string
+  min?: number
+  max?: number
+}
+
+export interface TriggerListItem {
+  sensor: string
+  min?: number
+  max?: number
+}
+
+export interface TriggerListResponse {
+  deviceId: string
+  triggers: TriggerListItem[]
+}
