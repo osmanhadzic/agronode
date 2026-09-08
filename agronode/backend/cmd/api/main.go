@@ -62,6 +62,7 @@ func main() {
 	defer appCancel()
 
 	mqttClient := mqtt.NewClient(cfg.MQTTBroker, cfg.MQTTTopic, cfg.MQTTActivationTopicTemplate, logger, telemetryService)
+	mqttClient.SetDeviceRegistrar(deviceService)
 	telemetryService.SetTriggerPublisher(mqttClient)
 	mqttErrorChannel := make(chan error, 1)
 

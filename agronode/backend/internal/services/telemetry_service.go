@@ -96,6 +96,17 @@ func (service *TelemetryService) SetSensorTrigger(_ context.Context, deviceID, s
 		}
 	}
 
+	if service.repository != nil {
+		reading := models.TelemetryReading{
+			DeviceID:    trimmedDeviceID,
+			CreatedAt:   time.Now().UTC(),
+			Sensors:     map[string]float64{trimmedSensor: 0},
+		}
+		if err := service.repository.Save(context.Background(), reading); err != nil {
+			return err
+		}
+	}
+
 	service.triggerMutex.Lock()
 	defer service.triggerMutex.Unlock()
 

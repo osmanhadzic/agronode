@@ -39,26 +39,39 @@ bool payloadHasBooleanField(const String& payload, const char* fieldName, bool e
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println();
-  Serial.println("BOOT OK");
 
   dht.begin();
-  delay(2000);
-
   pinMode(ACTIVATION_PIN, OUTPUT);
   digitalWrite(ACTIVATION_PIN, LOW);
-
-  Serial.print("DHT pin: ");
-  Serial.println(DHT_PIN);
-  Serial.println("DHT init done");
 
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMqttMessage);
 
   ensureWiFiConnected();
+  ensureMqttConnected();   // <-- obavezno pre registracije
   syncClock();
+  registerDevice();
+}
 
-  Serial.println("SETUP DONE");
+void registerDevice() {
+  if (!mqttClient.connected()) {
+    ensureMqttConnected();
+  }
+
+  char payload[256];
+  snprintf(payload, sizeof(payload),
+    "{\"deviceId\":\"%s\",\"firmware\":\"%s\"}",
+    DEVICE_ID,
+    FIRMWARE_VERSION
+  );
+
+  snprintf(activationTopicBuffer, sizeof(activationTopicBuffer), "agronode/%s/register", DEVICE_ID);
+
+  mqttClient.loop();
+  bool ok = mqttClient.publish(activationTopicBuffer, payload);
+
+  Serial.print("Device registration: ");
+  Serial.println(ok ? "SENT" : "FAILED");
 }
 
 void ensureWiFiConnected() {

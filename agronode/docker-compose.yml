@@ -40,6 +40,7 @@ services:
       DB_NAME: ${DB_NAME:-agronode}
       MQTT_BROKER: ${MQTT_BROKER:-tcp://mosquitto:1883}
       MQTT_TOPIC: ${MQTT_TOPIC:-agronode/#}
+      MQTT_ACTIVATION_TOPIC_TEMPLATE: ${MQTT_ACTIVATION_TOPIC_TEMPLATE:-agronode/%s/activation}
     ports:
       - "8080:8080"
     depends_on:

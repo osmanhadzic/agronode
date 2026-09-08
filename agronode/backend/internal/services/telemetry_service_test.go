@@ -26,6 +26,8 @@ func (stub *devicePresenceUpdaterStub) UpdatePresence(_ context.Context, deviceI
 	stub.updatedDeviceID = deviceID
 	stub.updatedSeenAt = seenAt
 	return stub.err
+}
+
 type triggerPublisherStub struct {
 	commands []mqtt.ActivationCommand
 	err      error
@@ -53,6 +55,10 @@ func (repository *telemetryRepositoryStub) List(context.Context) ([]models.Telem
 }
 
 func (repository *telemetryRepositoryStub) ListByDeviceID(context.Context, string) ([]models.TelemetryReading, error) {
+	return nil, nil
+}
+
+func (repository *telemetryRepositoryStub) ListByDeviceIDWithDateRange(_ context.Context, _ string, _ repositories.DateRange) ([]models.TelemetryReading, error) {
 	return nil, nil
 }
 
@@ -160,6 +166,12 @@ func TestTelemetryService_HandleTelemetry_Presence(t *testing.T) {
 		}
 
 		err := service.HandleTelemetry(context.Background(), envelope)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+}
+
 func TestTelemetryService_SetSensorTrigger(t *testing.T) {
 	t.Run("rejects invalid min max combination", func(t *testing.T) {
 		repository := &telemetryRepositoryStub{}
@@ -193,6 +205,8 @@ func TestTelemetryService_SetSensorTrigger(t *testing.T) {
 
 		if len(repository.saved) != 1 {
 			t.Fatalf("expected telemetry to be saved once, got %d", len(repository.saved))
+		}
+
 		trigger, err := service.GetSensorTrigger(context.Background(), "esp32-lab", "humidity")
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
@@ -258,6 +272,8 @@ func TestTelemetryService_HandleTelemetry_Discovery(t *testing.T) {
 			t.Fatalf("expected 4 discovered sensors, got %v", discoveryUpdater.updatedSensors)
 		}
 	})
+}
+
 func TestTelemetryService_GenericTriggerActivation(t *testing.T) {
 	repository := &telemetryRepositoryStub{}
 	publisher := &triggerPublisherStub{}

@@ -49,11 +49,9 @@ func (repository *GormDeviceRepository) Create(ctx context.Context, device *mode
 // GetByDeviceID retrieves a device by its device_id
 func (repository *GormDeviceRepository) GetByDeviceID(ctx context.Context, deviceID string) (*models.Device, error) {
 	var device models.Device
-	err := repository.database.WithContext(ctx).
+	if err := repository.database.WithContext(ctx).
 		Where("device_id = ?", deviceID).
-		First(&device).Error
-
-	if err != nil {
+		First(&device).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrDeviceNotFound
 		}

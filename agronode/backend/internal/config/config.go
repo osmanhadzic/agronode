@@ -34,7 +34,7 @@ func Load() Config {
 		MQTTTopic:            getEnv("MQTT_TOPIC", "agronode/#"),
 		DeviceInactivityMin:  getEnv("DEVICE_INACTIVITY_MIN", "15"),
 		DeviceWorkerInterval: getEnv("DEVICE_WORKER_INTERVAL", "1"),
-		MQTTActivationTopicTemplate: getEnv("MQTT_ACTIVATION_TOPIC_TEMPLATE", "agronode/devices/{device_id}/triggers/{trigger_id}/activate"),
+		MQTTActivationTopicTemplate: getEnv("MQTT_ACTIVATION_TOPIC_TEMPLATE", "agronode/%s/activation"),
 	}
 }
 

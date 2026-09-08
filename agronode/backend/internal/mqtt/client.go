@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"agronode/backend/internal/models"
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -50,12 +51,17 @@ type ActivationCommand struct {
 	Timestamp int64   `json:"timestamp"`
 }
 
+type DeviceRegistrar interface {
+	RegisterDevice(ctx context.Context, deviceID string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
+}
+
 type Client struct {
 	brokerURL               string
 	topic                   string
 	activationTopicTemplate string
 	logger                  *slog.Logger
 	consumer                TelemetryConsumer
+	registrar               DeviceRegistrar
 	client                  paho.Client
 }
 
@@ -140,10 +146,39 @@ func (client *Client) Run(runContext context.Context) error {
 	return nil
 }
 
+func (client *Client) SetDeviceRegistrar(registrar DeviceRegistrar) {
+	client.registrar = registrar
+}
+
 func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 	deviceID, err := extractDeviceIDFromTopic(message.Topic())
 	if err != nil {
 		client.logger.Warn("mqtt topic rejected", "topic", message.Topic(), "error", err)
+		return
+	}
+
+	if strings.HasSuffix(message.Topic(), "/register") {
+		if client.registrar == nil {
+			client.logger.Warn("mqtt register dropped: no device registrar configured", "topic", message.Topic())
+			return
+		}
+
+		registration, err := parseRegistrationPayload(message.Payload())
+		if err != nil {
+			client.logger.Warn("mqtt registration payload rejected", "topic", message.Topic(), "error", err)
+			return
+		}
+
+		if strings.TrimSpace(registration.DeviceID) == "" {
+			registration.DeviceID = deviceID
+		}
+
+		if _, err := client.registrar.RegisterDevice(context.Background(), registration.DeviceID, registration.FirmwareVersion, models.DeviceMetadata{}, "", "", nil); err != nil {
+			client.logger.Error("device registration from mqtt failed", "deviceId", registration.DeviceID, "error", err)
+			return
+		}
+
+		client.logger.Info("device registered via mqtt", "deviceId", registration.DeviceID, "firmwareVersion", registration.FirmwareVersion)
 		return
 	}
 
@@ -177,14 +212,31 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 	}
 }
 
+type deviceRegistrationPayload struct {
+	DeviceID        string `json:"deviceId"`
+	FirmwareVersion string `json:"firmware"`
+}
+
+func parseRegistrationPayload(payloadBytes []byte) (deviceRegistrationPayload, error) {
+	var payload deviceRegistrationPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return deviceRegistrationPayload{}, err
+	}
+	return payload, nil
+}
+
 func extractDeviceIDFromTopic(topic string) (string, error) {
 	parts := strings.Split(topic, "/")
 	if len(parts) != 3 {
 		return "", fmt.Errorf("topic must contain exactly 3 segments")
 	}
 
-	if parts[0] != "agronode" || parts[2] != "telemetry" {
-		return "", fmt.Errorf("topic must match agronode/{deviceId}/telemetry")
+	if parts[0] != "agronode" {
+		return "", fmt.Errorf("topic must start with agronode")
+	}
+
+	if parts[2] != "telemetry" && parts[2] != "register" {
+		return "", fmt.Errorf("topic must match agronode/{deviceId}/telemetry or agronode/{deviceId}/register")
 	}
 
 	deviceID := strings.TrimSpace(parts[1])
