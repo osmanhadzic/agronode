@@ -19,8 +19,10 @@ agronode/device-1/telemetry
 When a trigger is reached, backend publishes activation commands to:
 
 ```txt
-agronode/{deviceId}/activation
+agronode/{targetDeviceId}/activation
 ```
+
+`targetDeviceId` defaults to source telemetry device if not explicitly configured on trigger.
 
 Payload format:
 

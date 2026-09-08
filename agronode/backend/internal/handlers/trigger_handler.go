@@ -25,21 +25,24 @@ type triggerHandler struct {
 }
 
 type sensorTriggerRequest struct {
-	Min *float64 `json:"min"`
-	Max *float64 `json:"max"`
+	Min            *float64 `json:"min"`
+	Max            *float64 `json:"max"`
+	TargetDeviceID string   `json:"targetDeviceId"`
 }
 
 type sensorTriggerResponse struct {
-	DeviceID string   `json:"deviceId"`
-	Sensor   string   `json:"sensor"`
-	Min      *float64 `json:"min,omitempty"`
-	Max      *float64 `json:"max,omitempty"`
+	DeviceID       string   `json:"deviceId"`
+	Sensor         string   `json:"sensor"`
+	Min            *float64 `json:"min,omitempty"`
+	Max            *float64 `json:"max,omitempty"`
+	TargetDeviceID string   `json:"targetDeviceId,omitempty"`
 }
 
 type triggerListItem struct {
-	Sensor string   `json:"sensor"`
-	Min    *float64 `json:"min,omitempty"`
-	Max    *float64 `json:"max,omitempty"`
+	Sensor         string   `json:"sensor"`
+	Min            *float64 `json:"min,omitempty"`
+	Max            *float64 `json:"max,omitempty"`
+	TargetDeviceID string   `json:"targetDeviceId,omitempty"`
 }
 
 type triggerListResponse struct {
@@ -98,9 +101,10 @@ func (handler *triggerHandler) listDeviceTriggers(context *gin.Context) {
 	items := make([]triggerListItem, 0, len(triggers))
 	for sensor, trigger := range triggers {
 		items = append(items, triggerListItem{
-			Sensor: sensor,
-			Min:    trigger.Min,
-			Max:    trigger.Max,
+			Sensor:         sensor,
+			Min:            trigger.Min,
+			Max:            trigger.Max,
+			TargetDeviceID: trigger.TargetDeviceID,
 		})
 	}
 
@@ -121,8 +125,9 @@ func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 	}
 
 	trigger := models.SensorTrigger{
-		Min: request.Min,
-		Max: request.Max,
+		Min:            request.Min,
+		Max:            request.Max,
+		TargetDeviceID: request.TargetDeviceID,
 	}
 
 	if err := handler.service.SetSensorTrigger(context.Request.Context(), deviceID, sensor, trigger); err != nil {
@@ -136,11 +141,16 @@ func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 		return
 	}
 
+	if trigger.TargetDeviceID == "" {
+		trigger.TargetDeviceID = deviceID
+	}
+
 	context.JSON(http.StatusOK, sensorTriggerResponse{
-		DeviceID: deviceID,
-		Sensor:   sensor,
-		Min:      request.Min,
-		Max:      request.Max,
+		DeviceID:       deviceID,
+		Sensor:         sensor,
+		Min:            trigger.Min,
+		Max:            trigger.Max,
+		TargetDeviceID: trigger.TargetDeviceID,
 	})
 }
 
@@ -169,9 +179,10 @@ func (handler *triggerHandler) getSensorTrigger(context *gin.Context) {
 	}
 
 	context.JSON(http.StatusOK, sensorTriggerResponse{
-		DeviceID: deviceID,
-		Sensor:   sensor,
-		Min:      trigger.Min,
-		Max:      trigger.Max,
+		DeviceID:       deviceID,
+		Sensor:         sensor,
+		Min:            trigger.Min,
+		Max:            trigger.Max,
+		TargetDeviceID: trigger.TargetDeviceID,
 	})
 }

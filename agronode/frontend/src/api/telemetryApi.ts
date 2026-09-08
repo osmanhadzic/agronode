@@ -90,7 +90,7 @@ export async function fetchSensorTriggerByDeviceId(
 export async function saveSensorTriggerByDeviceId(
   deviceId: string,
   sensor: string,
-  payload: { min?: number; max?: number },
+  payload: { min?: number; max?: number; targetDeviceId?: string },
 ): Promise<SensorTrigger> {
   const encodedSensor = encodeURIComponent(sensor)
 

@@ -219,6 +219,10 @@ func TestTelemetryService_SetSensorTrigger(t *testing.T) {
 		if trigger.Max == nil || *trigger.Max != maxValue {
 			t.Fatalf("expected max %v, got %v", maxValue, trigger.Max)
 		}
+
+		if trigger.TargetDeviceID != "esp32-lab" {
+			t.Fatalf("expected target device id %q, got %q", "esp32-lab", trigger.TargetDeviceID)
+		}
 	})
 
 	t.Run("returns not found for missing sensor on existing device", func(t *testing.T) {
@@ -238,6 +242,43 @@ func TestTelemetryService_SetSensorTrigger(t *testing.T) {
 			t.Fatalf("expected ErrNotFound, got %v", err)
 		}
 	})
+}
+
+func TestTelemetryService_GenericTriggerActivation_TargetDevice(t *testing.T) {
+	repository := &telemetryRepositoryStub{}
+	publisher := &triggerPublisherStub{}
+	service := NewTelemetryService(repository, nil)
+	service.SetTriggerPublisher(publisher)
+
+	maxValue := 700.0
+	err := service.SetSensorTrigger(context.Background(), "esp32-lab", "co2", models.SensorTrigger{
+		Max:            &maxValue,
+		TargetDeviceID: "pump-node-1",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	now := time.Now().UTC()
+	firstReading := models.TelemetryReading{
+		DeviceID: "esp32-lab",
+		Sensors: map[string]float64{
+			"co2": 800,
+		},
+		CreatedAt: now,
+	}
+
+	if err := service.ProcessTelemetry(context.Background(), firstReading); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if len(publisher.commands) != 1 {
+		t.Fatalf("expected 1 activation command, got %d", len(publisher.commands))
+	}
+
+	if publisher.commands[0].DeviceID != "pump-node-1" {
+		t.Fatalf("expected activation target device %q, got %q", "pump-node-1", publisher.commands[0].DeviceID)
+	}
 }
 
 func TestTelemetryService_HandleTelemetry_Discovery(t *testing.T) {

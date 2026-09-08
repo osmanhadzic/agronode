@@ -23,6 +23,7 @@ import type { TelemetryReading, TriggerListItem } from '../types/telemetry'
 type TriggerEvent = {
   id: string
   deviceId: string
+  targetDeviceId: string
   sensor: string
   type: 'activation' | 'recovery'
   limitType: 'min' | 'max'
@@ -146,6 +147,7 @@ export function DashboardPage() {
   }, [updateQueue])
 
   const [selectedTriggerSensor, setSelectedTriggerSensor] = useState('temperature')
+  const [targetTriggerDeviceId, setTargetTriggerDeviceId] = useState('')
   const [minThresholdInput, setMinThresholdInput] = useState('')
   const [maxThresholdInput, setMaxThresholdInput] = useState('')
   const [triggerMessage, setTriggerMessage] = useState('')
@@ -193,6 +195,7 @@ export function DashboardPage() {
             nextEvents.push({
               id: `${reading.deviceId}-${sensor}-min-activation-${reading.createdAt}`,
               deviceId: reading.deviceId,
+              targetDeviceId: trigger.targetDeviceId ?? reading.deviceId,
               sensor,
               type: 'activation',
               limitType: 'min',
@@ -206,6 +209,7 @@ export function DashboardPage() {
             nextEvents.push({
               id: `${reading.deviceId}-${sensor}-min-recovery-${reading.createdAt}`,
               deviceId: reading.deviceId,
+              targetDeviceId: trigger.targetDeviceId ?? reading.deviceId,
               sensor,
               type: 'recovery',
               limitType: 'min',
@@ -224,6 +228,7 @@ export function DashboardPage() {
             nextEvents.push({
               id: `${reading.deviceId}-${sensor}-max-activation-${reading.createdAt}`,
               deviceId: reading.deviceId,
+              targetDeviceId: trigger.targetDeviceId ?? reading.deviceId,
               sensor,
               type: 'activation',
               limitType: 'max',
@@ -237,6 +242,7 @@ export function DashboardPage() {
             nextEvents.push({
               id: `${reading.deviceId}-${sensor}-max-recovery-${reading.createdAt}`,
               deviceId: reading.deviceId,
+              targetDeviceId: trigger.targetDeviceId ?? reading.deviceId,
               sensor,
               type: 'recovery',
               limitType: 'max',
@@ -605,6 +611,7 @@ export function DashboardPage() {
       if (!selectedDeviceId || !activeTriggerSensor) {
         setMinThresholdInput('')
         setMaxThresholdInput('')
+        setTargetTriggerDeviceId(selectedDeviceId)
         setTriggerError('')
         setTriggerMessage('')
         return
@@ -624,6 +631,7 @@ export function DashboardPage() {
 
         setMinThresholdInput(trigger?.min !== undefined ? String(trigger.min) : '')
         setMaxThresholdInput(trigger?.max !== undefined ? String(trigger.max) : '')
+        setTargetTriggerDeviceId(trigger?.targetDeviceId ?? selectedDeviceId)
       } catch {
         if (!isMounted) {
           return
@@ -662,6 +670,7 @@ export function DashboardPage() {
         )
 
         setDeviceTriggers(sortedTriggers)
+        setTargetTriggerDeviceId((previous) => previous || selectedDeviceId)
       } catch {
         if (!isMounted) {
           return
@@ -734,11 +743,13 @@ export function DashboardPage() {
         {
           min,
           max,
+          targetDeviceId: targetTriggerDeviceId.trim() || selectedDeviceId,
         },
       )
 
       setMinThresholdInput(savedTrigger.min !== undefined ? String(savedTrigger.min) : '')
       setMaxThresholdInput(savedTrigger.max !== undefined ? String(savedTrigger.max) : '')
+      setTargetTriggerDeviceId(savedTrigger.targetDeviceId ?? selectedDeviceId)
       setTriggerMessage('Trigger saved successfully')
       await refreshDeviceTriggers(selectedDeviceId)
     } catch {
@@ -752,6 +763,7 @@ export function DashboardPage() {
     setSelectedTriggerSensor(trigger.sensor)
     setMinThresholdInput(trigger.min !== undefined ? String(trigger.min) : '')
     setMaxThresholdInput(trigger.max !== undefined ? String(trigger.max) : '')
+    setTargetTriggerDeviceId(trigger.targetDeviceId ?? selectedDeviceId)
     setTriggerError('')
     setTriggerMessage('Trigger loaded into form')
   }
@@ -817,7 +829,7 @@ export function DashboardPage() {
         <div className="trigger-toast" role="status" aria-live="polite">
           <p className="trigger-event-text">{formatEventDescription(toastTriggerEvent)}</p>
           <p className="trigger-event-meta">
-            Uređaj: {toastTriggerEvent.deviceId} · Vreme: {formatEventTime(toastTriggerEvent.timestamp)} · Aktivacija poslata uređaju
+            Izvor: {toastTriggerEvent.deviceId} · Target: {toastTriggerEvent.targetDeviceId} · Vreme: {formatEventTime(toastTriggerEvent.timestamp)}
           </p>
         </div>
       )}
@@ -899,6 +911,20 @@ export function DashboardPage() {
               onChange={(event) => setMaxThresholdInput(event.target.value)}
             />
           </label>
+          <label className="trigger-field">
+            <span>Target Device</span>
+            <select
+              value={targetTriggerDeviceId || selectedDeviceId}
+              onChange={(event) => setTargetTriggerDeviceId(event.target.value)}
+              disabled={devices.length === 0}
+            >
+              {devices.map((deviceId) => (
+                <option key={deviceId} value={deviceId}>
+                  {deviceId}
+                </option>
+              ))}
+            </select>
+          </label>
           <button type="submit" disabled={isSavingTrigger || !selectedDeviceId}>
             {isSavingTrigger ? 'Saving...' : 'Save Trigger'}
           </button>
@@ -916,6 +942,7 @@ export function DashboardPage() {
                   <th>Sensor</th>
                   <th>Min</th>
                   <th>Max</th>
+                  <th>Target Device</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -925,6 +952,7 @@ export function DashboardPage() {
                     <td>{formatSensorLabel(trigger.sensor)}</td>
                     <td>{trigger.min !== undefined ? trigger.min : '-'}</td>
                     <td>{trigger.max !== undefined ? trigger.max : '-'}</td>
+                    <td>{trigger.targetDeviceId ?? selectedDeviceId}</td>
                     <td className="trigger-actions-cell">
                       <button
                         type="button"

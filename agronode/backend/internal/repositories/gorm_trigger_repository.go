@@ -19,12 +19,18 @@ func NewGormTriggerRepository(database *gorm.DB) *GormTriggerRepository {
 }
 
 func (repository *GormTriggerRepository) Upsert(context context.Context, deviceID, sensor string, trigger models.SensorTrigger) error {
+	var targetDeviceID *string
+	if trigger.TargetDeviceID != "" {
+		targetDeviceID = &trigger.TargetDeviceID
+	}
+
 	entity := models.SensorTriggerEntity{
-		DeviceID:  deviceID,
-		Sensor:    sensor,
-		MinValue:  trigger.Min,
-		MaxValue:  trigger.Max,
-		UpdatedAt: time.Now().UTC(),
+		DeviceID:       deviceID,
+		Sensor:         sensor,
+		MinValue:       trigger.Min,
+		MaxValue:       trigger.Max,
+		TargetDeviceID: targetDeviceID,
+		UpdatedAt:      time.Now().UTC(),
 	}
 
 	return repository.database.WithContext(context).
@@ -34,9 +40,10 @@ func (repository *GormTriggerRepository) Upsert(context context.Context, deviceI
 				{Name: "sensor"},
 			},
 			DoUpdates: clause.Assignments(map[string]interface{}{
-				"min_value":  entity.MinValue,
-				"max_value":  entity.MaxValue,
-				"updated_at": entity.UpdatedAt,
+				"min_value":        entity.MinValue,
+				"max_value":        entity.MaxValue,
+				"target_device_id": entity.TargetDeviceID,
+				"updated_at":       entity.UpdatedAt,
 			}),
 		}).
 		Create(&entity).Error
@@ -56,8 +63,9 @@ func (repository *GormTriggerRepository) GetByDeviceAndSensor(context context.Co
 	}
 
 	return models.SensorTrigger{
-		Min: entity.MinValue,
-		Max: entity.MaxValue,
+		Min:            entity.MinValue,
+		Max:            entity.MaxValue,
+		TargetDeviceID: valueOrEmpty(entity.TargetDeviceID),
 	}, nil
 }
 
@@ -73,8 +81,9 @@ func (repository *GormTriggerRepository) ListByDeviceID(context context.Context,
 	triggers := make(map[string]models.SensorTrigger, len(entities))
 	for _, entity := range entities {
 		triggers[entity.Sensor] = models.SensorTrigger{
-			Min: entity.MinValue,
-			Max: entity.MaxValue,
+			Min:            entity.MinValue,
+			Max:            entity.MaxValue,
+			TargetDeviceID: valueOrEmpty(entity.TargetDeviceID),
 		}
 	}
 
@@ -94,4 +103,12 @@ func (repository *GormTriggerRepository) DeleteByDeviceAndSensor(context context
 	}
 
 	return nil
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+
+	return *value
 }

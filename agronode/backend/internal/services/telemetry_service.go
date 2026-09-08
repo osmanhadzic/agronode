@@ -90,6 +90,12 @@ func (service *TelemetryService) SetSensorTrigger(_ context.Context, deviceID, s
 		return fmt.Errorf("%w: min threshold must be lower than max threshold", ErrValidation)
 	}
 
+	if strings.TrimSpace(trigger.TargetDeviceID) == "" {
+		trigger.TargetDeviceID = trimmedDeviceID
+	} else {
+		trigger.TargetDeviceID = strings.TrimSpace(trigger.TargetDeviceID)
+	}
+
 	if service.triggerRepository != nil {
 		if err := service.triggerRepository.Upsert(context.Background(), trimmedDeviceID, trimmedSensor, trigger); err != nil {
 			return err
@@ -500,7 +506,8 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 		if trigger.Min != nil {
 			if value <= *trigger.Min {
 				if !state.MinActive {
-					service.sendActivation(context, reading.DeviceID, sensor, "below_min", "min", value, *trigger.Min)
+					targetDeviceID := resolveTargetDeviceID(reading.DeviceID, trigger)
+					service.sendActivation(context, targetDeviceID, sensor, "below_min", "min", value, *trigger.Min)
 					state.MinActive = true
 				}
 			} else {
@@ -511,7 +518,8 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 		if trigger.Max != nil {
 			if value >= *trigger.Max {
 				if !state.MaxActive {
-					service.sendActivation(context, reading.DeviceID, sensor, "above_max", "max", value, *trigger.Max)
+					targetDeviceID := resolveTargetDeviceID(reading.DeviceID, trigger)
+					service.sendActivation(context, targetDeviceID, sensor, "above_max", "max", value, *trigger.Max)
 					state.MaxActive = true
 				}
 			} else {
@@ -585,6 +593,9 @@ func (service *TelemetryService) loadDeviceTriggers(deviceID string) error {
 	}
 
 	service.triggers[deviceID] = triggers
+	for sensor, trigger := range service.triggers[deviceID] {
+		service.triggers[deviceID][sensor] = normalizeTriggerTarget(deviceID, trigger)
+	}
 	if service.triggerState[deviceID] == nil {
 		service.triggerState[deviceID] = make(map[string]sensorTriggerState, len(triggers))
 	}
@@ -595,4 +606,23 @@ func (service *TelemetryService) loadDeviceTriggers(deviceID string) error {
 	}
 
 	return nil
+}
+
+func resolveTargetDeviceID(sourceDeviceID string, trigger models.SensorTrigger) string {
+	trimmedTarget := strings.TrimSpace(trigger.TargetDeviceID)
+	if trimmedTarget != "" {
+		return trimmedTarget
+	}
+
+	return sourceDeviceID
+}
+
+func normalizeTriggerTarget(deviceID string, trigger models.SensorTrigger) models.SensorTrigger {
+	if strings.TrimSpace(trigger.TargetDeviceID) == "" {
+		trigger.TargetDeviceID = deviceID
+		return trigger
+	}
+
+	trigger.TargetDeviceID = strings.TrimSpace(trigger.TargetDeviceID)
+	return trigger
 }
