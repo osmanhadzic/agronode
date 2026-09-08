@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"agronode/backend/internal/repositories"
 	"agronode/backend/internal/server"
 	"agronode/backend/internal/services"
+	"agronode/backend/internal/workers"
 )
 
 func main() {
@@ -45,14 +47,23 @@ func main() {
 
 	store := database.NewStore(databaseConnection)
 	telemetryRepository := repositories.NewGormTelemetryRepository(store.DB)
+	triggerRepository := repositories.NewGormTriggerRepository(store.DB)
 	telemetryService := services.NewTelemetryService(telemetryRepository, logger)
+	deviceRepository := repositories.NewGormDeviceRepository(store.DB)
+	deviceService := services.NewDeviceService(deviceRepository, logger)
+	telemetryService.SetTriggerRepository(triggerRepository)
 	realtimeHub := realtime.NewHub(logger)
 	telemetryService.SetBroadcaster(realtimeHub)
+	telemetryService.SetPresenceUpdater(deviceService)
+	deviceService.SetEventPublisher(realtimeHub)
+	telemetryService.SetSensorDiscoveryUpdater(deviceService)
 
 	appContext, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
-	mqttClient := mqtt.NewClient(cfg.MQTTBroker, cfg.MQTTTopic, logger, telemetryService)
+	mqttClient := mqtt.NewClient(cfg.MQTTBroker, cfg.MQTTTopic, cfg.MQTTActivationTopicTemplate, logger, telemetryService)
+	mqttClient.SetDeviceRegistrar(deviceService)
+	telemetryService.SetTriggerPublisher(mqttClient)
 	mqttErrorChannel := make(chan error, 1)
 
 	go func() {
@@ -61,12 +72,41 @@ func main() {
 		}
 	}()
 
-	router := server.NewRouter(logger, telemetryService, realtimeHub)
+	router := server.NewRouter(logger, telemetryService, telemetryService, deviceService, realtimeHub)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.AppPort,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+
+	// Parse and start offline detection worker
+	inactivityMinutes, err := strconv.Atoi(cfg.DeviceInactivityMin)
+	if err != nil {
+		logger.Warn("invalid DEVICE_INACTIVITY_MIN, using default", "error", err)
+		inactivityMinutes = 15
+	}
+
+	workerIntervalMinutes, err := strconv.Atoi(cfg.DeviceWorkerInterval)
+	if err != nil {
+		logger.Warn("invalid DEVICE_WORKER_INTERVAL, using default", "error", err)
+		workerIntervalMinutes = 1
+	}
+
+	offlineWorker := workers.NewOfflineDetectionWorker(
+		deviceService,
+		logger,
+		time.Duration(inactivityMinutes)*time.Minute,
+		time.Duration(workerIntervalMinutes)*time.Minute,
+	)
+
+	go func() {
+		if err := func() error {
+			offlineWorker.Run(appContext)
+			return nil
+		}(); err != nil {
+			logger.Error("offline detection worker error", "error", err)
+		}
+	}()
 
 	go func() {
 		logger.Info("http server starting", "port", cfg.AppPort)

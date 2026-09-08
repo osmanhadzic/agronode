@@ -13,3 +13,44 @@ export interface TelemetryReading {
   meta?: DeviceMeta
   createdAt: string
 }
+
+export interface DeviceSummary {
+  id: number
+  deviceId: string
+  status: string
+  firmwareVersion?: string
+  metadata?: {
+    battery?: number
+    signalStrength?: number
+    hardware?: Record<string, string>
+  }
+  lastSeen?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DeviceStatusEvent {
+  deviceId: string
+  oldStatus: string
+  newStatus: string
+  eventType: 'device.online' | 'device.offline' | string
+  timestamp: string
+}
+
+export interface SensorTrigger {
+  deviceId: string
+  sensor: string
+  min?: number
+  max?: number
+}
+
+export interface TriggerListItem {
+  sensor: string
+  min?: number
+  max?: number
+}
+
+export interface TriggerListResponse {
+  deviceId: string
+  triggers: TriggerListItem[]
+}
