@@ -22,9 +22,17 @@ The backend ingests MQTT telemetry, validates and normalizes readings, stores th
 3. Service validates telemetry and prepares canonical reading.
 4. Repository stores record in PostgreSQL.
 5. Service emits reading to realtime hub.
-6. Handlers expose data through:
-   - REST: `/api/data`, `/api/data/:deviceId`, `/api/latest/:deviceId`
+6. Service evaluates sensor trigger thresholds for that source device.
+7. When trigger is activated, service publishes activation command to MQTT topic `agronode/{targetDeviceId}/activation`.
+8. Handlers expose data through:
+   - REST: `/api/data`, `/api/data/:deviceId`, `/api/latest/:deviceId`, `/api/triggers/:deviceId`, `/api/triggers/:deviceId/:sensor`
    - WebSocket: `/ws/telemetry`
+
+Trigger routing behavior:
+
+- `targetDeviceId` in trigger config is optional.
+- If present, activation command is published to that target device.
+- If omitted, source device ID is used as activation target.
 
 ## Layer Rules
 
