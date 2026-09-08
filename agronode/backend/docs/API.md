@@ -179,7 +179,8 @@ Response:
     {
       "sensor": "temperature",
       "min": 18,
-      "max": 30
+      "max": 30,
+      "targetDeviceId": "pump-node-1"
     },
     {
       "sensor": "humidity",
@@ -206,11 +207,14 @@ Request body:
 ```json
 {
   "min": 18,
-  "max": 30
+  "max": 30,
+  "targetDeviceId": "pump-node-1"
 }
 ```
 
 At least one of `min` or `max` is required.
+
+`targetDeviceId` is optional. If omitted, activation is sent to the same `deviceId` from the route.
 
 Response:
 
@@ -219,7 +223,8 @@ Response:
   "deviceId": "esp32-lab",
   "sensor": "humidity",
   "min": 40,
-  "max": 80
+  "max": 80,
+  "targetDeviceId": "pump-node-1"
 }
 ```
 
@@ -239,7 +244,8 @@ Response:
   "deviceId": "esp32-lab",
   "sensor": "humidity",
   "min": 40,
-  "max": 80
+  "max": 80,
+  "targetDeviceId": "pump-node-1"
 }
 ```
 

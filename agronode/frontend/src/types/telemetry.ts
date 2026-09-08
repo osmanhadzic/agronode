@@ -42,12 +42,14 @@ export interface SensorTrigger {
   sensor: string
   min?: number
   max?: number
+  targetDeviceId?: string
 }
 
 export interface TriggerListItem {
   sensor: string
   min?: number
   max?: number
+  targetDeviceId?: string
 }
 
 export interface TriggerListResponse {
