@@ -25,6 +25,7 @@ agronode/
 ## Core Features
 
 - MQTT telemetry ingestion (`agronode/{deviceId}/telemetry`)
+- Trigger rules per sensor with optional cross-device activation target
 - REST API for historical and latest readings
 - WebSocket stream for live dashboard updates (`/ws/telemetry`)
 - PostgreSQL persistence with migrations
@@ -38,6 +39,10 @@ Base URL: `http://localhost:8080`
 - `GET /api/data`
 - `GET /api/data/:deviceId`
 - `GET /api/latest/:deviceId`
+- `GET /api/triggers/:deviceId`
+- `PUT /api/triggers/:deviceId/:sensor`
+- `GET /api/triggers/:deviceId/:sensor`
+- `DELETE /api/triggers/:deviceId/:sensor`
 - `GET /ws/telemetry` (WebSocket)
 
 Full API details: `agronode/backend/docs/API.md`
@@ -49,6 +54,14 @@ Topic:
 ```txt
 agronode/{deviceId}/telemetry
 ```
+
+Activation command topic (backend -> device):
+
+```txt
+agronode/{targetDeviceId}/activation
+```
+
+If `targetDeviceId` is omitted in trigger configuration, backend sends activation to the same source `deviceId`.
 
 Payload shape:
 

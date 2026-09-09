@@ -106,6 +106,13 @@ agronode/#
 - Extracts `deviceId` from topic
 - Validates payload
 - Sends data to service layer
+- Evaluates configured sensor triggers for source device
+- Publishes activation command to `agronode/{targetDeviceId}/activation`
+
+Trigger routing rule:
+
+- If trigger contains `targetDeviceId`, activation is sent to that device
+- If `targetDeviceId` is missing, activation is sent back to source `deviceId`
 
 ---
 

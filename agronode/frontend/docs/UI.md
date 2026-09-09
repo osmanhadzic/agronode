@@ -23,6 +23,7 @@
 - Charts
 - Device switching
 - Sensor visibility filtering
+- Sensor trigger configuration (min/max + target device)
 
 ---
 
@@ -43,6 +44,13 @@
 ## SensorVisibilitySelector
 - checkbox list for available sensors
 - toggles visible cards and chart lines
+
+## TriggerPanel
+- sensor selector
+- min / max threshold inputs
+- target device selector
+- save trigger action
+- configured triggers table (sensor, min, max, target device, actions)
 
 ---
 

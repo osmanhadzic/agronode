@@ -9,6 +9,8 @@ React + TypeScript dashboard for AgroNode telemetry visualization.
 - Sensor visibility toggles
 - Realtime chart updates via WebSocket
 - API fallback/history loading via REST
+- Trigger configuration per sensor (min/max)
+- Target device selection for trigger activation
 
 ## Run locally
 
@@ -31,6 +33,10 @@ If not set, frontend defaults to backend at `http://<host>:8080` and WebSocket a
 
 - `GET /api/data`
 - `GET /api/latest/:deviceId`
+- `GET /api/triggers/:deviceId`
+- `GET /api/triggers/:deviceId/:sensor`
+- `PUT /api/triggers/:deviceId/:sensor`
+- `DELETE /api/triggers/:deviceId/:sensor`
 - `GET /ws/telemetry` (WebSocket)
 
 See UI design notes in `docs/UI.md`.
