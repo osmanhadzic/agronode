@@ -15,16 +15,17 @@ import (
 )
 
 type TelemetryService struct {
-	repository               repositories.TelemetryRepository
-	triggerRepository        repositories.TriggerRepository
-	logger                   *slog.Logger
-	broadcaster              TelemetryBroadcaster
-	triggerPublisher         TriggerCommandPublisher
-	presenceUpdater          DevicePresenceUpdater
-	sensorDiscoveryUpdater   DeviceSensorDiscoveryUpdater
-	triggers                 map[string]map[string]models.SensorTrigger
-	triggerState             map[string]map[string]sensorTriggerState
-	triggerMutex             sync.RWMutex
+	repository             repositories.TelemetryRepository
+	triggerRepository      repositories.TriggerRepository
+	logger                 *slog.Logger
+	broadcaster            TelemetryBroadcaster
+	triggerPublisher       TriggerCommandPublisher
+	presenceUpdater        DevicePresenceUpdater
+	sensorDiscoveryUpdater DeviceSensorDiscoveryUpdater
+	metadataUpdater        DeviceMetadataUpdater
+	triggers               map[string]map[string]models.SensorTrigger
+	triggerState           map[string]map[string]sensorTriggerState
+	triggerMutex           sync.RWMutex
 }
 
 var ErrValidation = errors.New("telemetry validation failed")
@@ -35,6 +36,10 @@ type TelemetryBroadcaster interface {
 
 type TriggerCommandPublisher interface {
 	PublishActivationCommand(context.Context, mqtt.ActivationCommand) error
+}
+
+type DeviceMetadataUpdater interface {
+	UpdateMetadataFromTelemetry(ctx context.Context, deviceID string, meta *models.DeviceMeta) error
 }
 
 type sensorTriggerState struct {
@@ -62,7 +67,11 @@ func (service *TelemetryService) SetPresenceUpdater(updater DevicePresenceUpdate
 func (service *TelemetryService) SetSensorDiscoveryUpdater(updater DeviceSensorDiscoveryUpdater) {
 	service.sensorDiscoveryUpdater = updater
 }
-	
+
+func (service *TelemetryService) SetMetadataUpdater(updater DeviceMetadataUpdater) {
+	service.metadataUpdater = updater
+}
+
 func (service *TelemetryService) SetTriggerPublisher(publisher TriggerCommandPublisher) {
 	service.triggerPublisher = publisher
 }
@@ -71,7 +80,7 @@ func (service *TelemetryService) SetTriggerRepository(repository repositories.Tr
 	service.triggerRepository = repository
 }
 
-func (service *TelemetryService) SetSensorTrigger(_ context.Context, deviceID, sensor string, trigger models.SensorTrigger) error {
+func (service *TelemetryService) SetSensorTrigger(ctx context.Context, deviceID, sensor string, trigger models.SensorTrigger) error {
 	trimmedDeviceID := strings.TrimSpace(deviceID)
 	if trimmedDeviceID == "" {
 		return fmt.Errorf("%w: device id is required", ErrValidation)
@@ -97,18 +106,18 @@ func (service *TelemetryService) SetSensorTrigger(_ context.Context, deviceID, s
 	}
 
 	if service.triggerRepository != nil {
-		if err := service.triggerRepository.Upsert(context.Background(), trimmedDeviceID, trimmedSensor, trigger); err != nil {
+		if err := service.triggerRepository.Upsert(ctx, trimmedDeviceID, trimmedSensor, trigger); err != nil {
 			return err
 		}
 	}
 
 	if service.repository != nil {
 		reading := models.TelemetryReading{
-			DeviceID:    trimmedDeviceID,
-			CreatedAt:   time.Now().UTC(),
-			Sensors:     map[string]float64{trimmedSensor: 0},
+			DeviceID:  trimmedDeviceID,
+			CreatedAt: time.Now().UTC(),
+			Sensors:   map[string]float64{trimmedSensor: 0},
 		}
-		if err := service.repository.Save(context.Background(), reading); err != nil {
+		if err := service.repository.Save(ctx, reading); err != nil {
 			return err
 		}
 	}
@@ -133,7 +142,7 @@ func (service *TelemetryService) SetSensorTrigger(_ context.Context, deviceID, s
 	return nil
 }
 
-func (service *TelemetryService) GetSensorTrigger(_ context.Context, deviceID, sensor string) (models.SensorTrigger, error) {
+func (service *TelemetryService) GetSensorTrigger(ctx context.Context, deviceID, sensor string) (models.SensorTrigger, error) {
 	trimmedDeviceID := strings.TrimSpace(deviceID)
 	if trimmedDeviceID == "" {
 		return models.SensorTrigger{}, fmt.Errorf("%w: device id is required", ErrValidation)
@@ -157,7 +166,7 @@ func (service *TelemetryService) GetSensorTrigger(_ context.Context, deviceID, s
 	}
 	service.triggerMutex.RUnlock()
 
-	if err := service.loadDeviceTriggers(trimmedDeviceID); err != nil {
+	if err := service.loadDeviceTriggers(ctx, trimmedDeviceID); err != nil {
 		return models.SensorTrigger{}, err
 	}
 
@@ -177,7 +186,7 @@ func (service *TelemetryService) GetSensorTrigger(_ context.Context, deviceID, s
 	return trigger, nil
 }
 
-func (service *TelemetryService) ListSensorTriggers(_ context.Context, deviceID string) (map[string]models.SensorTrigger, error) {
+func (service *TelemetryService) ListSensorTriggers(ctx context.Context, deviceID string) (map[string]models.SensorTrigger, error) {
 	trimmedDeviceID := strings.TrimSpace(deviceID)
 	if trimmedDeviceID == "" {
 		return nil, fmt.Errorf("%w: device id is required", ErrValidation)
@@ -196,7 +205,7 @@ func (service *TelemetryService) ListSensorTriggers(_ context.Context, deviceID 
 	}
 	service.triggerMutex.RUnlock()
 
-	if err := service.loadDeviceTriggers(trimmedDeviceID); err != nil {
+	if err := service.loadDeviceTriggers(ctx, trimmedDeviceID); err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return map[string]models.SensorTrigger{}, nil
 		}
@@ -219,7 +228,7 @@ func (service *TelemetryService) ListSensorTriggers(_ context.Context, deviceID 
 	return clonedTriggers, nil
 }
 
-func (service *TelemetryService) DeleteSensorTrigger(_ context.Context, deviceID, sensor string) error {
+func (service *TelemetryService) DeleteSensorTrigger(ctx context.Context, deviceID, sensor string) error {
 	trimmedDeviceID := strings.TrimSpace(deviceID)
 	if trimmedDeviceID == "" {
 		return fmt.Errorf("%w: device id is required", ErrValidation)
@@ -231,7 +240,7 @@ func (service *TelemetryService) DeleteSensorTrigger(_ context.Context, deviceID
 	}
 
 	if service.triggerRepository != nil {
-		if err := service.triggerRepository.DeleteByDeviceAndSensor(context.Background(), trimmedDeviceID, trimmedSensor); err != nil {
+		if err := service.triggerRepository.DeleteByDeviceAndSensor(ctx, trimmedDeviceID, trimmedSensor); err != nil {
 			return err
 		}
 	}
@@ -317,6 +326,25 @@ func (service *TelemetryService) HandleTelemetry(context context.Context, teleme
 		return err
 	}
 
+	metadataForDevice := reading.Meta
+	if metadataForDevice == nil {
+		if signalStrength, ok := reading.Sensors["signal_strength"]; ok {
+			metadataForDevice = &models.DeviceMeta{RSSI: int(signalStrength)}
+		}
+	}
+
+	if metadataForDevice != nil && service.metadataUpdater != nil {
+		if err := service.metadataUpdater.UpdateMetadataFromTelemetry(context, reading.DeviceID, metadataForDevice); err != nil {
+			if !errors.Is(err, repositories.ErrDeviceNotFound) {
+				if service.logger != nil {
+					service.logger.Warn("device metadata update failed", "deviceId", reading.DeviceID, "error", err)
+				}
+			} else if service.logger != nil {
+				service.logger.Warn("device metadata update skipped: device not registered", "deviceId", reading.DeviceID)
+			}
+		}
+	}
+
 	if service.presenceUpdater != nil {
 		if err := service.presenceUpdater.UpdatePresence(context, reading.DeviceID, reading.CreatedAt); err != nil {
 			if !errors.Is(err, repositories.ErrDeviceNotFound) {
@@ -384,18 +412,18 @@ func (service *TelemetryService) GetTelemetryByDeviceIDWithDateFilter(context co
 
 func calculateDateRange(period string, startDate, endDate *time.Time) repositories.DateRange {
 	now := time.Now().UTC()
-	
+
 	switch period {
 	case "hour":
 		start := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, time.UTC)
 		end := start.Add(1 * time.Hour)
 		return repositories.DateRange{StartDate: &start, EndDate: &end}
-	
+
 	case "day":
 		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 		end := start.Add(24 * time.Hour)
 		return repositories.DateRange{StartDate: &start, EndDate: &end}
-	
+
 	case "week":
 		// Start of week (Monday)
 		weekday := int(now.Weekday())
@@ -405,20 +433,20 @@ func calculateDateRange(period string, startDate, endDate *time.Time) repositori
 		start := time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, time.UTC)
 		end := start.Add(7 * 24 * time.Hour)
 		return repositories.DateRange{StartDate: &start, EndDate: &end}
-	
+
 	case "month":
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		end := start.AddDate(0, 1, 0)
 		return repositories.DateRange{StartDate: &start, EndDate: &end}
-	
+
 	case "year":
 		start := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
 		end := start.AddDate(1, 0, 0)
 		return repositories.DateRange{StartDate: &start, EndDate: &end}
-	
+
 	case "custom":
 		return repositories.DateRange{StartDate: startDate, EndDate: endDate}
-	
+
 	default:
 		// No filter
 		return repositories.DateRange{}
@@ -470,7 +498,7 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 	deviceTriggers, exists := service.triggers[reading.DeviceID]
 	if !exists && service.triggerRepository != nil {
 		service.triggerMutex.RUnlock()
-		if err := service.loadDeviceTriggers(reading.DeviceID); err != nil {
+		if err := service.loadDeviceTriggers(context, reading.DeviceID); err != nil {
 			if service.logger != nil && !errors.Is(err, repositories.ErrNotFound) {
 				service.logger.Error("load device triggers failed", "deviceId", reading.DeviceID, "error", err)
 			}
@@ -571,12 +599,12 @@ func (service *TelemetryService) sendActivation(context context.Context, deviceI
 	}
 }
 
-func (service *TelemetryService) loadDeviceTriggers(deviceID string) error {
+func (service *TelemetryService) loadDeviceTriggers(context context.Context, deviceID string) error {
 	if service.triggerRepository == nil {
 		return repositories.ErrNotFound
 	}
 
-	triggers, err := service.triggerRepository.ListByDeviceID(context.Background(), deviceID)
+	triggers, err := service.triggerRepository.ListByDeviceID(context, deviceID)
 	if err != nil {
 		return err
 	}

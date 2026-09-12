@@ -18,6 +18,7 @@ import { DeviceMetaPanel } from '../components/DeviceMetaPanel'
 import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
 import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector'
+import { clearSession, loadSession } from '../api/session'
 import type { TelemetryReading, TriggerListItem } from '../types/telemetry'
 
 type TriggerEvent = {
@@ -163,6 +164,7 @@ export function DashboardPage() {
   const selectedDeviceRef = useRef('')
   const triggerMapRef = useRef<Record<string, TriggerListItem>>({})
   const toastTimerRef = useRef<number | null>(null)
+  const session = loadSession()
 
   useEffect(() => {
     let isMounted = true
@@ -848,15 +850,31 @@ export function DashboardPage() {
               </span>
             </p>
           )}
+
+          {session && (
+            <p className="dashboard-session">
+              Signed in as <strong>{session.email}</strong> · Org {session.organizationId}
+            </p>
+          )}
         </div>
 
-        {devices.length > 0 && (
-          <DeviceSelector
-            devices={devices}
-            selectedDeviceId={selectedDeviceId}
-            onChange={handleSelectDevice}
-          />
-        )}
+        <div className="dashboard-header-actions">
+          {devices.length > 0 && (
+            <DeviceSelector
+              devices={devices}
+              selectedDeviceId={selectedDeviceId}
+              onChange={handleSelectDevice}
+            />
+          )}
+
+          <button
+            type="button"
+            className="dashboard-logout-button"
+            onClick={() => clearSession()}
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       <DeviceMetaPanel meta={latestDeviceReading?.meta} />

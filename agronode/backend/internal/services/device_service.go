@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"strconv"
 	"sort"
 	"strings"
 	"time"
 
 	"agronode/backend/internal/models"
 	"agronode/backend/internal/repositories"
+	"agronode/backend/internal/tenancy"
 )
 
 var ErrDeviceValidation = errors.New("device validation failed")
@@ -125,6 +127,10 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 		ProvisioningTokenHash: hashDeviceSecret(provisioningToken),
 		CreatedAt:             time.Now(),
 		UpdatedAt:             time.Now(),
+	}
+
+	if organizationID, ok := tenancy.OrganizationIDFromContext(ctx); ok {
+		device.OrganizationID = &organizationID
 	}
 
 	if err := service.repository.Create(ctx, device); err != nil {
@@ -307,6 +313,64 @@ func (service *DeviceService) UpdateDiscoveredSensors(ctx context.Context, devic
 	}
 
 	sort.Strings(device.DiscoveredSensors)
+	return service.repository.Update(ctx, device)
+}
+
+// UpdateMetadataFromTelemetry merges telemetry meta fields into device metadata.
+func (service *DeviceService) UpdateMetadataFromTelemetry(ctx context.Context, deviceID string, meta *models.DeviceMeta) error {
+	if err := validateDeviceID(deviceID); err != nil {
+		return err
+	}
+
+	if meta == nil {
+		return nil
+	}
+
+	device, err := service.repository.GetByDeviceID(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+
+	changed := false
+
+	firmware := strings.TrimSpace(meta.Firmware)
+	if firmware != "" && firmware != strings.TrimSpace(device.FirmwareVersion) {
+		device.FirmwareVersion = firmware
+		changed = true
+	}
+
+	signalStrength := float64(meta.RSSI)
+	if device.Metadata.SignalStrength == nil || *device.Metadata.SignalStrength != signalStrength {
+		device.Metadata.SignalStrength = &signalStrength
+		changed = true
+	}
+
+	if device.Metadata.Hardware == nil {
+		device.Metadata.Hardware = map[string]string{}
+	}
+
+	ipAddress := strings.TrimSpace(meta.IP)
+	if ipAddress != "" && device.Metadata.Hardware["ip"] != ipAddress {
+		device.Metadata.Hardware["ip"] = ipAddress
+		changed = true
+	}
+
+	if meta.Uptime > 0 {
+		uptimeSeconds := strconv.FormatUint(meta.Uptime, 10)
+		if device.Metadata.Hardware["uptimeSeconds"] != uptimeSeconds {
+			device.Metadata.Hardware["uptimeSeconds"] = uptimeSeconds
+			changed = true
+		}
+	}
+
+	if !changed {
+		return nil
+	}
+
+	if err := validateDeviceMetadata(device.Metadata); err != nil {
+		return err
+	}
+
 	return service.repository.Update(ctx, device)
 }
 

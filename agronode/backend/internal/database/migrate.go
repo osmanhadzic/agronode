@@ -30,6 +30,7 @@ var orderedMigrations = []migration{
 	{Version: "000010", File: "migrations/000010_add_device_meta.up.sql"},
 	{Version: "000011", File: "migrations/000011_add_target_device_id_to_sensor_triggers.up.sql"},
 	{Version: "000012", File: "migrations/000012_add_organizations_and_asset_hierarchy.up.sql"},
+	{Version: "000013", File: "migrations/000013_add_password_hash_to_users.up.sql"},
 }
 
 func RunMigrations(context context.Context, db *gorm.DB, logger *slog.Logger) error {

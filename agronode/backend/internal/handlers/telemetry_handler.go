@@ -26,11 +26,11 @@ type telemetryHandler struct {
 }
 
 type telemetryResponse struct {
-	DeviceID    string  `json:"deviceId"`
-	Temperature float64 `json:"temperature"`
-	Humidity    float64 `json:"humidity"`
+	DeviceID    string             `json:"deviceId"`
+	Temperature float64            `json:"temperature"`
+	Humidity    float64            `json:"humidity"`
 	Sensors     map[string]float64 `json:"sensors,omitempty"`
-	CreatedAt   string  `json:"createdAt"`
+	CreatedAt   string             `json:"createdAt"`
 }
 
 func RegisterTelemetryRoutes(api *gin.RouterGroup, logger *slog.Logger, service TelemetryQueryService) {
@@ -42,7 +42,13 @@ func RegisterTelemetryRoutes(api *gin.RouterGroup, logger *slog.Logger, service 
 }
 
 func (handler *telemetryHandler) getAllData(context *gin.Context) {
-	readings, err := handler.service.GetAllTelemetry(context.Request.Context())
+	requestContext, err := requestContextWithOrganizationScope(context)
+	if err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	readings, err := handler.service.GetAllTelemetry(requestContext)
 	if err != nil {
 		handler.logger.Error("get all telemetry failed", "error", err)
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch telemetry"})
@@ -54,19 +60,24 @@ func (handler *telemetryHandler) getAllData(context *gin.Context) {
 
 func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 	deviceID := context.Param("deviceId")
-	
+	requestContext, err := requestContextWithOrganizationScope(context)
+	if err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	// Query parameters for date filtering
 	period := context.Query("period") // day, week, month, year, custom
 	startDateStr := context.Query("startDate")
 	endDateStr := context.Query("endDate")
 
 	var readings []models.TelemetryReading
-	var err error
+	var serviceErr error
 
 	// If period or date range is specified, use filtered query
 	if period != "" || startDateStr != "" || endDateStr != "" {
 		var startDate, endDate *time.Time
-		
+
 		if startDateStr != "" {
 			parsed, parseErr := time.Parse(time.RFC3339, startDateStr)
 			if parseErr != nil {
@@ -75,7 +86,7 @@ func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 			}
 			startDate = &parsed
 		}
-		
+
 		if endDateStr != "" {
 			parsed, parseErr := time.Parse(time.RFC3339, endDateStr)
 			if parseErr != nil {
@@ -84,22 +95,22 @@ func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 			}
 			endDate = &parsed
 		}
-		
-		readings, err = handler.service.GetTelemetryByDeviceIDWithDateFilter(
-			context.Request.Context(), 
-			deviceID, 
-			period, 
-			startDate, 
+
+		readings, serviceErr = handler.service.GetTelemetryByDeviceIDWithDateFilter(
+			requestContext,
+			deviceID,
+			period,
+			startDate,
 			endDate,
 		)
 	} else {
-		readings, err = handler.service.GetTelemetryByDeviceID(context.Request.Context(), deviceID)
+		readings, serviceErr = handler.service.GetTelemetryByDeviceID(requestContext, deviceID)
 	}
 
-	if err != nil {
-		handler.logger.Error("get telemetry by device failed", "deviceId", deviceID, "error", err)
-		if errors.Is(err, services.ErrValidation) {
-			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if serviceErr != nil {
+		handler.logger.Error("get telemetry by device failed", "deviceId", deviceID, "error", serviceErr)
+		if errors.Is(serviceErr, services.ErrValidation) {
+			context.JSON(http.StatusBadRequest, gin.H{"error": serviceErr.Error()})
 			return
 		}
 
@@ -112,8 +123,13 @@ func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 
 func (handler *telemetryHandler) getLatestByDeviceID(context *gin.Context) {
 	deviceID := context.Param("deviceId")
+	requestContext, err := requestContextWithOrganizationScope(context)
+	if err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
-	reading, err := handler.service.GetLatestTelemetryByDeviceID(context.Request.Context(), deviceID)
+	reading, err := handler.service.GetLatestTelemetryByDeviceID(requestContext, deviceID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			context.JSON(http.StatusNotFound, gin.H{"error": "telemetry not found"})

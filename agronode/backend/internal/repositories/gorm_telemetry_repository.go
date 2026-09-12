@@ -6,8 +6,8 @@ import (
 	"errors"
 
 	"agronode/backend/internal/models"
-	"gorm.io/gorm/clause"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type GormTelemetryRepository struct {
@@ -39,6 +39,20 @@ func (repository *GormTelemetryRepository) Save(context context.Context, reading
 		CreatedAt:   reading.CreatedAt,
 	}
 
+	if organizationID, ok := organizationIDFromContext(context); ok {
+		var count int64
+		if err := repository.database.WithContext(context).
+			Model(&models.Device{}).
+			Where("device_id = ? AND organization_id = ?", reading.DeviceID, organizationID).
+			Count(&count).Error; err != nil {
+			return err
+		}
+
+		if count == 0 {
+			return ErrDeviceNotFound
+		}
+	}
+
 	return repository.database.WithContext(context).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
@@ -53,8 +67,16 @@ func (repository *GormTelemetryRepository) Save(context context.Context, reading
 
 func (repository *GormTelemetryRepository) List(context context.Context) ([]models.TelemetryReading, error) {
 	var entities []models.SensorData
-	err := repository.database.WithContext(context).
-		Order("created_at DESC").
+	db := repository.database.WithContext(context).Model(&models.SensorData{})
+
+	if organizationID, ok := organizationIDFromContext(context); ok {
+		db = db.
+			Joins("JOIN devices ON devices.device_id = sensor_data.device_id").
+			Where("devices.organization_id = ?", organizationID)
+	}
+
+	err := db.
+		Order("sensor_data.created_at DESC").
 		Find(&entities).Error
 	if err != nil {
 		return nil, err
@@ -65,9 +87,17 @@ func (repository *GormTelemetryRepository) List(context context.Context) ([]mode
 
 func (repository *GormTelemetryRepository) ListByDeviceID(context context.Context, deviceID string) ([]models.TelemetryReading, error) {
 	var entities []models.SensorData
-	err := repository.database.WithContext(context).
-		Where("device_id = ?", deviceID).
-		Order("created_at DESC").
+	db := repository.database.WithContext(context).
+		Where("sensor_data.device_id = ?", deviceID)
+
+	if organizationID, ok := organizationIDFromContext(context); ok {
+		db = db.
+			Joins("JOIN devices ON devices.device_id = sensor_data.device_id").
+			Where("devices.organization_id = ?", organizationID)
+	}
+
+	err := db.
+		Order("sensor_data.created_at DESC").
 		Find(&entities).Error
 	if err != nil {
 		return nil, err
@@ -78,17 +108,23 @@ func (repository *GormTelemetryRepository) ListByDeviceID(context context.Contex
 
 func (repository *GormTelemetryRepository) ListByDeviceIDWithDateRange(context context.Context, deviceID string, dateRange DateRange) ([]models.TelemetryReading, error) {
 	var entities []models.SensorData
-	query := repository.database.WithContext(context).Where("device_id = ?", deviceID)
+	query := repository.database.WithContext(context).Where("sensor_data.device_id = ?", deviceID)
+
+	if organizationID, ok := organizationIDFromContext(context); ok {
+		query = query.
+			Joins("JOIN devices ON devices.device_id = sensor_data.device_id").
+			Where("devices.organization_id = ?", organizationID)
+	}
 
 	if dateRange.StartDate != nil {
-		query = query.Where("created_at >= ?", *dateRange.StartDate)
+		query = query.Where("sensor_data.created_at >= ?", *dateRange.StartDate)
 	}
 
 	if dateRange.EndDate != nil {
-		query = query.Where("created_at <= ?", *dateRange.EndDate)
+		query = query.Where("sensor_data.created_at <= ?", *dateRange.EndDate)
 	}
 
-	err := query.Order("created_at DESC").Find(&entities).Error
+	err := query.Order("sensor_data.created_at DESC").Find(&entities).Error
 	if err != nil {
 		return nil, err
 	}
@@ -98,9 +134,17 @@ func (repository *GormTelemetryRepository) ListByDeviceIDWithDateRange(context c
 
 func (repository *GormTelemetryRepository) GetLatestByDeviceID(context context.Context, deviceID string) (models.TelemetryReading, error) {
 	var entity models.SensorData
-	err := repository.database.WithContext(context).
-		Where("device_id = ?", deviceID).
-		Order("created_at DESC").
+	db := repository.database.WithContext(context).
+		Where("sensor_data.device_id = ?", deviceID)
+
+	if organizationID, ok := organizationIDFromContext(context); ok {
+		db = db.
+			Joins("JOIN devices ON devices.device_id = sensor_data.device_id").
+			Where("devices.organization_id = ?", organizationID)
+	}
+
+	err := db.
+		Order("sensor_data.created_at DESC").
 		First(&entity).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

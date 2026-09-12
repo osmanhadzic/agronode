@@ -450,6 +450,64 @@ func TestDeviceService_UpdateDiscoveredSensors(t *testing.T) {
 	})
 }
 
+func TestDeviceService_UpdateMetadataFromTelemetry(t *testing.T) {
+	t.Run("merges telemetry meta into device metadata", func(t *testing.T) {
+		repository := &deviceRepositoryStub{
+			getByDeviceIDResult: &models.Device{
+				DeviceID: "esp32-lab",
+				Metadata: models.DeviceMetadata{
+					Hardware: map[string]string{"model": "ESP32"},
+				},
+			},
+		}
+		service := NewDeviceService(repository, nil)
+
+		err := service.UpdateMetadataFromTelemetry(context.Background(), "esp32-lab", &models.DeviceMeta{
+			Firmware: "1.0.1",
+			IP:       "192.168.1.10",
+			RSSI:     -67,
+			Uptime:   456,
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if repository.updateInput == nil {
+			t.Fatal("expected repository.Update to be called")
+		}
+
+		if repository.updateInput.FirmwareVersion != "1.0.1" {
+			t.Fatalf("expected firmware version %q, got %q", "1.0.1", repository.updateInput.FirmwareVersion)
+		}
+
+		if repository.updateInput.Metadata.SignalStrength == nil || *repository.updateInput.Metadata.SignalStrength != -67 {
+			t.Fatalf("expected signal strength -67, got %#v", repository.updateInput.Metadata.SignalStrength)
+		}
+
+		if repository.updateInput.Metadata.Hardware["ip"] != "192.168.1.10" {
+			t.Fatalf("expected hardware ip %q, got %q", "192.168.1.10", repository.updateInput.Metadata.Hardware["ip"])
+		}
+
+		if repository.updateInput.Metadata.Hardware["uptimeSeconds"] != "456" {
+			t.Fatalf("expected uptimeSeconds %q, got %q", "456", repository.updateInput.Metadata.Hardware["uptimeSeconds"])
+		}
+	})
+
+	t.Run("skips update when meta is nil", func(t *testing.T) {
+		repository := &deviceRepositoryStub{}
+		service := NewDeviceService(repository, nil)
+
+		err := service.UpdateMetadataFromTelemetry(context.Background(), "esp32-lab", nil)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if repository.updateInput != nil {
+			t.Fatal("expected no repository update call")
+		}
+	})
+}
+
 func floatPtr(value float64) *float64 {
 	return &value
 }

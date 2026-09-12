@@ -58,11 +58,16 @@ void registerDevice() {
     ensureMqttConnected();
   }
 
-  char payload[256];
+  char payload[512];
+  int rssi = (int)WiFi.RSSI();
   snprintf(payload, sizeof(payload),
-    "{\"deviceId\":\"%s\",\"firmware\":\"%s\"}",
+    "{\"deviceId\":\"%s\",\"firmware\":\"%s\","
+    "\"metadata\":{\"signalStrength\":%d,\"hardware\":{\"model\":\"ESP32\",\"source\":\"firmware-register\",\"ip\":\"%s\"}},"
+    "\"tags\":[\"live\",\"esp32\",\"plastenik\"]}",
     DEVICE_ID,
-    FIRMWARE_VERSION
+    FIRMWARE_VERSION,
+    rssi,
+    WiFi.localIP().toString().c_str()
   );
 
   snprintf(activationTopicBuffer, sizeof(activationTopicBuffer), "agronode/%s/register", DEVICE_ID);
@@ -195,21 +200,24 @@ bool payloadHasBooleanField(const String& payload, const char* fieldName, bool e
 }
 
 bool publishTelemetry(float temperature, float humidity, unsigned long epochSeconds) {
-  char payload[384];
+  char payload[448];
+  int rssi = (int)WiFi.RSSI();
+  unsigned long uptimeSeconds = millis() / 1000UL;
   int length = snprintf(
     payload,
     sizeof(payload),
     "{\"deviceId\":\"%s\",\"timestamp\":%lu,\"version\":1,"
     "\"meta\":{\"fw\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"uptime\":%lu},"
-    "\"sensors\":{\"temperature\":%.2f,\"humidity\":%.2f}}",
+    "\"sensors\":{\"temperature\":%.2f,\"humidity\":%.2f,\"signal_strength\":%d}}",
     DEVICE_ID,
     epochSeconds,
     FIRMWARE_VERSION,
     WiFi.localIP().toString().c_str(),
-    (int)WiFi.RSSI(),
-    millis() / 1000UL,
+    rssi,
+    uptimeSeconds,
     temperature,
-    humidity
+    humidity,
+    rssi
   );
 
   if (length <= 0 || length >= (int)sizeof(payload)) {

@@ -173,7 +173,7 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 			registration.DeviceID = deviceID
 		}
 
-		if _, err := client.registrar.RegisterDevice(context.Background(), registration.DeviceID, registration.FirmwareVersion, models.DeviceMetadata{}, "", "", nil); err != nil {
+		if _, err := client.registrar.RegisterDevice(context.Background(), registration.DeviceID, registration.FirmwareVersion, registration.Metadata, "", "", registration.Tags); err != nil {
 			client.logger.Error("device registration from mqtt failed", "deviceId", registration.DeviceID, "error", err)
 			return
 		}
@@ -215,6 +215,8 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 type deviceRegistrationPayload struct {
 	DeviceID        string `json:"deviceId"`
 	FirmwareVersion string `json:"firmware"`
+	Metadata        models.DeviceMetadata `json:"metadata"`
+	Tags            []string              `json:"tags"`
 }
 
 func parseRegistrationPayload(payloadBytes []byte) (deviceRegistrationPayload, error) {
