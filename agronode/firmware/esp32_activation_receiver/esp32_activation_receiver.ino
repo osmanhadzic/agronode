@@ -10,7 +10,7 @@ const char* WIFI_PASSWORD = "techno123";
 const char* MQTT_HOST = "192.168.193.106";
 const uint16_t MQTT_PORT = 1883;
 
-const char* DEVICE_ID = "pump-node-1";
+const char* DEVICE_ID_BASE = "pump-node";
 const char* FIRMWARE_VERSION = "1.0.0";
 const unsigned long ACTIVATION_SIGNAL_DURATION_MS = 5000;
 
@@ -24,6 +24,13 @@ PubSubClient mqttClient(wifiClient);
 unsigned long activationSignalUntilMs = 0;
 char activationTopicBuffer[128];
 char registerTopicBuffer[128];
+char deviceIdBuffer[64];
+
+void buildRuntimeDeviceId() {
+  uint64_t chipId = ESP.getEfuseMac();
+  uint32_t suffix = (uint32_t)(chipId & 0xFFFFFF);
+  snprintf(deviceIdBuffer, sizeof(deviceIdBuffer), "%s-%06lX", DEVICE_ID_BASE, (unsigned long)suffix);
+}
 
 void ensureWiFiConnected();
 void ensureMqttConnected();
@@ -38,14 +45,18 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  buildRuntimeDeviceId();
+  Serial.print("Runtime DEVICE_ID: ");
+  Serial.println(deviceIdBuffer);
+
   pinMode(ACTIVATION_PIN, OUTPUT);
   digitalWrite(ACTIVATION_PIN, LOW);
 
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMqttMessage);
 
-  snprintf(activationTopicBuffer, sizeof(activationTopicBuffer), "agronode/%s/activation", DEVICE_ID);
-  snprintf(registerTopicBuffer, sizeof(registerTopicBuffer), "agronode/%s/register", DEVICE_ID);
+  snprintf(activationTopicBuffer, sizeof(activationTopicBuffer), "agronode/%s/activation", deviceIdBuffer);
+  snprintf(registerTopicBuffer, sizeof(registerTopicBuffer), "agronode/%s/register", deviceIdBuffer);
 
   ensureWiFiConnected();
   ensureMqttConnected();
@@ -79,7 +90,7 @@ void ensureMqttConnected() {
 
   Serial.print("Connecting MQTT");
   while (!mqttClient.connected()) {
-    if (mqttClient.connect(DEVICE_ID)) {
+    if (mqttClient.connect(deviceIdBuffer)) {
       Serial.println(" connected");
       bool subscribed = mqttClient.subscribe(activationTopicBuffer);
       Serial.print("Subscribe activation topic: ");
@@ -105,8 +116,19 @@ void registerDevice() {
     ensureMqttConnected();
   }
 
-  char payload[256];
-  snprintf(payload, sizeof(payload), "{\"deviceId\":\"%s\",\"firmware\":\"%s\"}", DEVICE_ID, FIRMWARE_VERSION);
+  char payload[512];
+  int rssi = (int)WiFi.RSSI();
+  snprintf(
+    payload,
+    sizeof(payload),
+    "{\"deviceId\":\"%s\",\"firmware\":\"%s\","
+    "\"metadata\":{\"signalStrength\":%d,\"hardware\":{\"model\":\"ESP32\",\"source\":\"firmware-register\",\"ip\":\"%s\"}},"
+    "\"tags\":[\"live\",\"esp32\",\"actuator\"]}",
+    deviceIdBuffer,
+    FIRMWARE_VERSION,
+    rssi,
+    WiFi.localIP().toString().c_str()
+  );
 
   mqttClient.loop();
   bool ok = mqttClient.publish(registerTopicBuffer, payload);
@@ -131,7 +153,7 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
 }
 
 void handleActivationPayload(const String& payload) {
-  if (!payloadHasDeviceId(payload, DEVICE_ID)) {
+  if (!payloadHasDeviceId(payload, deviceIdBuffer)) {
     Serial.println("Activation payload ignored: deviceId mismatch");
     return;
   }

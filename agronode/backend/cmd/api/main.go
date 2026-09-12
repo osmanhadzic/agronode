@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"agronode/backend/internal/auth"
 	"agronode/backend/internal/config"
 	"agronode/backend/internal/database"
 	"agronode/backend/internal/mqtt"
@@ -48,6 +49,16 @@ func main() {
 	store := database.NewStore(databaseConnection)
 	telemetryRepository := repositories.NewGormTelemetryRepository(store.DB)
 	triggerRepository := repositories.NewGormTriggerRepository(store.DB)
+	userRepository := repositories.NewGormUserRepository(store.DB)
+	if err := services.EnsureBootstrapAuthData(startupContext, store.DB, cfg, logger); err != nil {
+		logger.Error("bootstrap auth data failed", "error", err)
+		os.Exit(1)
+	}
+	if err := services.EnsureDemoSeedData(startupContext, store.DB, cfg, logger); err != nil {
+		logger.Error("demo seed data failed", "error", err)
+		os.Exit(1)
+	}
+	authService := services.NewAuthLoginService(userRepository, auth.SessionConfig{Secret: cfg.SessionSecret, TTL: cfg.FrontendSessionTTL})
 	telemetryService := services.NewTelemetryService(telemetryRepository, logger)
 	deviceRepository := repositories.NewGormDeviceRepository(store.DB)
 	deviceService := services.NewDeviceService(deviceRepository, logger)
@@ -57,12 +68,14 @@ func main() {
 	telemetryService.SetPresenceUpdater(deviceService)
 	deviceService.SetEventPublisher(realtimeHub)
 	telemetryService.SetSensorDiscoveryUpdater(deviceService)
+	telemetryService.SetMetadataUpdater(deviceService)
 
 	appContext, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
 	mqttClient := mqtt.NewClient(cfg.MQTTBroker, cfg.MQTTTopic, cfg.MQTTActivationTopicTemplate, logger, telemetryService)
 	mqttClient.SetDeviceRegistrar(deviceService)
+	mqttClient.SetDefaultOrganizationID(cfg.FrontendOrganizationID)
 	telemetryService.SetTriggerPublisher(mqttClient)
 	mqttErrorChannel := make(chan error, 1)
 
@@ -72,7 +85,7 @@ func main() {
 		}
 	}()
 
-	router := server.NewRouter(logger, telemetryService, telemetryService, deviceService, realtimeHub)
+	router := server.NewRouter(logger, cfg.SessionSecret, authService, telemetryService, telemetryService, deviceService, realtimeHub)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.AppPort,
 		Handler:           router,

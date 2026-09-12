@@ -33,6 +33,12 @@ services:
     container_name: agronode-backend
     environment:
       APP_PORT: ${BACKEND_PORT:-8080}
+      SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret}
+      FRONTEND_LOGIN_EMAIL: ${FRONTEND_LOGIN_EMAIL:-admin@agronode.local}
+      FRONTEND_LOGIN_PASSWORD: ${FRONTEND_LOGIN_PASSWORD:-admin123}
+      FRONTEND_ORGANIZATION_ID: ${FRONTEND_ORGANIZATION_ID:-1}
+      FRONTEND_SESSION_TTL_HOURS: ${FRONTEND_SESSION_TTL_HOURS:-24}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
       DB_USER: ${DB_USER:-postgres}

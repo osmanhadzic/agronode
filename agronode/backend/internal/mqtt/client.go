@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"agronode/backend/internal/models"
+	"agronode/backend/internal/tenancy"
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -62,6 +63,7 @@ type Client struct {
 	logger                  *slog.Logger
 	consumer                TelemetryConsumer
 	registrar               DeviceRegistrar
+	defaultOrganizationID   uint
 	client                  paho.Client
 }
 
@@ -150,6 +152,10 @@ func (client *Client) SetDeviceRegistrar(registrar DeviceRegistrar) {
 	client.registrar = registrar
 }
 
+func (client *Client) SetDefaultOrganizationID(organizationID uint) {
+	client.defaultOrganizationID = organizationID
+}
+
 func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 	deviceID, err := extractDeviceIDFromTopic(message.Topic())
 	if err != nil {
@@ -173,7 +179,12 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 			registration.DeviceID = deviceID
 		}
 
-		if _, err := client.registrar.RegisterDevice(context.Background(), registration.DeviceID, registration.FirmwareVersion, models.DeviceMetadata{}, "", "", nil); err != nil {
+		registrationContext := context.Background()
+		if client.defaultOrganizationID != 0 {
+			registrationContext = tenancy.WithOrganizationID(registrationContext, client.defaultOrganizationID)
+		}
+
+		if _, err := client.registrar.RegisterDevice(registrationContext, registration.DeviceID, registration.FirmwareVersion, registration.Metadata, "", "", registration.Tags); err != nil {
 			client.logger.Error("device registration from mqtt failed", "deviceId", registration.DeviceID, "error", err)
 			return
 		}
@@ -215,6 +226,8 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 type deviceRegistrationPayload struct {
 	DeviceID        string `json:"deviceId"`
 	FirmwareVersion string `json:"firmware"`
+	Metadata        models.DeviceMetadata `json:"metadata"`
+	Tags            []string              `json:"tags"`
 }
 
 func parseRegistrationPayload(payloadBytes []byte) (deviceRegistrationPayload, error) {

@@ -58,6 +58,12 @@ func RegisterDeviceRoutes(api *gin.RouterGroup, logger *slog.Logger, service Dev
 }
 
 func (handler *deviceHandler) registerDevice(ctx *gin.Context) {
+	requestContext, err := requestContextWithOrganizationScope(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	var req registerDeviceRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		handler.logger.Warn("invalid registration request", "error", err)
@@ -65,7 +71,7 @@ func (handler *deviceHandler) registerDevice(ctx *gin.Context) {
 		return
 	}
 
-	device, err := handler.service.RegisterDevice(ctx.Request.Context(), req.DeviceID, req.FirmwareVersion, req.Metadata, req.APIKey, req.ProvisioningToken, req.Tags)
+	device, err := handler.service.RegisterDevice(requestContext, req.DeviceID, req.FirmwareVersion, req.Metadata, req.APIKey, req.ProvisioningToken, req.Tags)
 	if err != nil {
 		handler.logger.Error("device registration failed", "deviceId", req.DeviceID, "error", err)
 
@@ -83,8 +89,13 @@ func (handler *deviceHandler) registerDevice(ctx *gin.Context) {
 
 func (handler *deviceHandler) getDevice(ctx *gin.Context) {
 	deviceID := ctx.Param("deviceId")
+	requestContext, err := requestContextWithOrganizationScope(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
-	device, err := handler.service.GetDevice(ctx.Request.Context(), deviceID)
+	device, err := handler.service.GetDevice(requestContext, deviceID)
 	if err != nil {
 		handler.logger.Error("get device failed", "deviceId", deviceID, "error", err)
 
@@ -106,6 +117,12 @@ func (handler *deviceHandler) getDevice(ctx *gin.Context) {
 }
 
 func (handler *deviceHandler) listDevices(ctx *gin.Context) {
+	requestContext, err := requestContextWithOrganizationScope(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	page, err := parseQueryInt(ctx.Query("page"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "page must be a valid integer"})
@@ -118,7 +135,7 @@ func (handler *deviceHandler) listDevices(ctx *gin.Context) {
 		return
 	}
 
-	devices, err := handler.service.ListDevices(ctx.Request.Context(), services.DeviceListParams{
+	devices, err := handler.service.ListDevices(requestContext, services.DeviceListParams{
 		Page:   page,
 		Limit:  limit,
 		Status: ctx.Query("status"),
