@@ -72,6 +72,10 @@ func testDeviceLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+func addOrganizationHeader(request *http.Request) {
+	request.Header.Set("X-Organization-ID", "1")
+}
+
 func TestGetDevice(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -94,6 +98,7 @@ func TestGetDevice(t *testing.T) {
 		RegisterDeviceRoutes(api, testDeviceLogger(), service)
 
 		request := httptest.NewRequest(http.MethodGet, "/api/devices/esp32-lab", nil)
+		addOrganizationHeader(request)
 		responseRecorder := httptest.NewRecorder()
 
 		router.ServeHTTP(responseRecorder, request)
@@ -132,6 +137,7 @@ func TestGetDevice(t *testing.T) {
 		RegisterDeviceRoutes(api, testDeviceLogger(), service)
 
 		request := httptest.NewRequest(http.MethodGet, "/api/devices/missing-device", nil)
+		addOrganizationHeader(request)
 		responseRecorder := httptest.NewRecorder()
 
 		router.ServeHTTP(responseRecorder, request)
@@ -180,6 +186,7 @@ func TestRegisterDevice(t *testing.T) {
 		body := `{"deviceId":"esp32-lab","firmwareVersion":"v1.2.3","metadata":{"battery":87.5,"signalStrength":-61,"hardware":{"model":"ESP32","rev":"1"}},"apiKey":"api-key-value","provisioningToken":"provisioning-token-value","tags":["greenhouse","lab"]}`
 		request := httptest.NewRequest(http.MethodPost, "/api/devices/register", strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
+		addOrganizationHeader(request)
 		responseRecorder := httptest.NewRecorder()
 
 		router.ServeHTTP(responseRecorder, request)
@@ -245,6 +252,7 @@ func TestListDevices(t *testing.T) {
 		RegisterDeviceRoutes(api, testDeviceLogger(), service)
 
 		request := httptest.NewRequest(http.MethodGet, "/api/devices?page=2&limit=5&status=online&search=lab&tags=greenhouse,lab", nil)
+		addOrganizationHeader(request)
 		responseRecorder := httptest.NewRecorder()
 
 		router.ServeHTTP(responseRecorder, request)
@@ -291,6 +299,7 @@ func TestListDevices(t *testing.T) {
 		RegisterDeviceRoutes(api, testDeviceLogger(), service)
 
 		request := httptest.NewRequest(http.MethodGet, "/api/devices?page=abc", nil)
+		addOrganizationHeader(request)
 		responseRecorder := httptest.NewRecorder()
 
 		router.ServeHTTP(responseRecorder, request)
@@ -310,6 +319,7 @@ func TestListDevices(t *testing.T) {
 		RegisterDeviceRoutes(api, testDeviceLogger(), service)
 
 		request := httptest.NewRequest(http.MethodGet, "/api/devices?status=invalid", nil)
+		addOrganizationHeader(request)
 		responseRecorder := httptest.NewRecorder()
 
 		router.ServeHTTP(responseRecorder, request)

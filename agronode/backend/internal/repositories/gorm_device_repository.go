@@ -49,8 +49,14 @@ func (repository *GormDeviceRepository) Create(ctx context.Context, device *mode
 // GetByDeviceID retrieves a device by its device_id
 func (repository *GormDeviceRepository) GetByDeviceID(ctx context.Context, deviceID string) (*models.Device, error) {
 	var device models.Device
-	if err := repository.database.WithContext(ctx).
-		Where("device_id = ?", deviceID).
+	db := repository.database.WithContext(ctx).
+		Where("device_id = ?", deviceID)
+
+	if organizationID, ok := organizationIDFromContext(ctx); ok {
+		db = db.Where("organization_id = ?", organizationID)
+	}
+
+	if err := db.
 		First(&device).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrDeviceNotFound
@@ -82,6 +88,10 @@ func (repository *GormDeviceRepository) Update(ctx context.Context, device *mode
 // List retrieves devices with pagination, optional status filter and search
 func (repository *GormDeviceRepository) List(ctx context.Context, query DeviceListQuery) ([]models.Device, error) {
 	db := repository.database.WithContext(ctx).Model(&models.Device{})
+
+	if organizationID, ok := organizationIDFromContext(ctx); ok {
+		db = db.Where("organization_id = ?", organizationID)
+	}
 
 	if query.Status != "" {
 		db = db.Where("status = ?", query.Status)
@@ -117,8 +127,14 @@ func (repository *GormDeviceRepository) List(ctx context.Context, query DeviceLi
 // ListInactiveOnline retrieves online devices that haven't been seen since the given time
 func (repository *GormDeviceRepository) ListInactiveOnline(ctx context.Context, inactiveSince time.Time) ([]models.Device, error) {
 	var devices []models.Device
-	err := repository.database.WithContext(ctx).
-		Where("status = ? AND (last_seen IS NULL OR last_seen < ?)", models.DeviceStatusOnline, inactiveSince).
+	db := repository.database.WithContext(ctx).
+		Where("status = ? AND (last_seen IS NULL OR last_seen < ?)", models.DeviceStatusOnline, inactiveSince)
+
+	if organizationID, ok := organizationIDFromContext(ctx); ok {
+		db = db.Where("organization_id = ?", organizationID)
+	}
+
+	err := db.
 		Order("last_seen ASC").
 		Find(&devices).Error
 

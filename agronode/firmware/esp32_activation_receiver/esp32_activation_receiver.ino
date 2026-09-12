@@ -105,8 +105,19 @@ void registerDevice() {
     ensureMqttConnected();
   }
 
-  char payload[256];
-  snprintf(payload, sizeof(payload), "{\"deviceId\":\"%s\",\"firmware\":\"%s\"}", DEVICE_ID, FIRMWARE_VERSION);
+  char payload[512];
+  int rssi = (int)WiFi.RSSI();
+  snprintf(
+    payload,
+    sizeof(payload),
+    "{\"deviceId\":\"%s\",\"firmware\":\"%s\","
+    "\"metadata\":{\"signalStrength\":%d,\"hardware\":{\"model\":\"ESP32\",\"source\":\"firmware-register\",\"ip\":\"%s\"}},"
+    "\"tags\":[\"live\",\"esp32\",\"actuator\"]}",
+    DEVICE_ID,
+    FIRMWARE_VERSION,
+    rssi,
+    WiFi.localIP().toString().c_str()
+  );
 
   mqttClient.loop();
   bool ok = mqttClient.publish(registerTopicBuffer, payload);

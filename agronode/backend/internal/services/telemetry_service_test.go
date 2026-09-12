@@ -22,9 +22,21 @@ type devicePresenceUpdaterStub struct {
 	err             error
 }
 
+type deviceMetadataUpdaterStub struct {
+	updatedDeviceID string
+	updatedMeta     *models.DeviceMeta
+	err             error
+}
+
 func (stub *devicePresenceUpdaterStub) UpdatePresence(_ context.Context, deviceID string, seenAt time.Time) error {
 	stub.updatedDeviceID = deviceID
 	stub.updatedSeenAt = seenAt
+	return stub.err
+}
+
+func (stub *deviceMetadataUpdaterStub) UpdateMetadataFromTelemetry(_ context.Context, deviceID string, meta *models.DeviceMeta) error {
+	stub.updatedDeviceID = deviceID
+	stub.updatedMeta = meta
 	return stub.err
 }
 
@@ -168,6 +180,71 @@ func TestTelemetryService_HandleTelemetry_Presence(t *testing.T) {
 		err := service.HandleTelemetry(context.Background(), envelope)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+
+	t.Run("updates device metadata when meta payload exists", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		metadataUpdater := &deviceMetadataUpdaterStub{}
+		service := NewTelemetryService(repository, nil)
+		service.SetMetadataUpdater(metadataUpdater)
+
+		envelope := mqtt.TelemetryEnvelope{
+			DeviceID: "esp32-lab",
+			Meta: &mqtt.DeviceMeta{
+				Firmware: "1.0.1",
+				IP:       "192.168.1.50",
+				RSSI:     -65,
+				Uptime:   123,
+			},
+			Sensors: map[string]float64{
+				"temperature": 23,
+			},
+		}
+
+		err := service.HandleTelemetry(context.Background(), envelope)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if metadataUpdater.updatedDeviceID != "esp32-lab" {
+			t.Fatalf("expected updated device id %q, got %q", "esp32-lab", metadataUpdater.updatedDeviceID)
+		}
+
+		if metadataUpdater.updatedMeta == nil {
+			t.Fatal("expected metadata updater to receive telemetry meta")
+		}
+
+		if metadataUpdater.updatedMeta.RSSI != -65 {
+			t.Fatalf("expected rssi -65, got %d", metadataUpdater.updatedMeta.RSSI)
+		}
+	})
+
+	t.Run("updates device metadata from signal_strength sensor when meta is missing", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		metadataUpdater := &deviceMetadataUpdaterStub{}
+		service := NewTelemetryService(repository, nil)
+		service.SetMetadataUpdater(metadataUpdater)
+
+		envelope := mqtt.TelemetryEnvelope{
+			DeviceID: "esp32-lab",
+			Sensors: map[string]float64{
+				"temperature":     23,
+				"signal_strength": -71,
+			},
+		}
+
+		err := service.HandleTelemetry(context.Background(), envelope)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if metadataUpdater.updatedMeta == nil {
+			t.Fatal("expected metadata updater to receive fallback meta")
+		}
+
+		if metadataUpdater.updatedMeta.RSSI != -71 {
+			t.Fatalf("expected fallback rssi -71, got %d", metadataUpdater.updatedMeta.RSSI)
 		}
 	})
 }
