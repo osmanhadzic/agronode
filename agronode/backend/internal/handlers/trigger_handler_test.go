@@ -48,7 +48,7 @@ func TestTriggerHandler_setSensorTrigger(t *testing.T) {
 		ctx, _ := gin.CreateTestContext(recorder)
 		ctx.Request = httptest.NewRequest(http.MethodPut, "/api/triggers/esp32-lab/co2", bytes.NewBufferString(`{"max":700}`))
 		ctx.Request.Header.Set("Content-Type", "application/json")
-		ctx.Params = gin.Params{{Key: "deviceId", Value: "esp32-lab"}, {Key: "sensor", Value: "co2"}}
+		ctx.Params = gin.Params{{Key: "deviceId", Value: "esp32-lab"}, {Key: "sensorId", Value: "co2"}}
 		ctx.Request = ctx.Request.WithContext(context.Background())
 		ctx.Request.Header.Set(organizationIDHeader, "1")
 
@@ -67,7 +67,7 @@ func TestTriggerHandler_setSensorTrigger(t *testing.T) {
 		ctx, _ := gin.CreateTestContext(recorder)
 		ctx.Request = httptest.NewRequest(http.MethodPut, "/api/triggers/esp32-lab/co2", bytes.NewBufferString(`{"max":700}`))
 		ctx.Request.Header.Set("Content-Type", "application/json")
-		ctx.Params = gin.Params{{Key: "deviceId", Value: "esp32-lab"}, {Key: "sensor", Value: "co2"}}
+		ctx.Params = gin.Params{{Key: "deviceId", Value: "esp32-lab"}, {Key: "sensorId", Value: "co2"}}
 		ctx.Request = ctx.Request.WithContext(context.Background())
 		ctx.Request.Header.Set(organizationIDHeader, "1")
 

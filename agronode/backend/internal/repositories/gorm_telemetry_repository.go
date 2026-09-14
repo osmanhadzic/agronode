@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"agronode/backend/internal/models"
 	"gorm.io/gorm"
@@ -20,6 +21,7 @@ func NewGormTelemetryRepository(database *gorm.DB) *GormTelemetryRepository {
 
 func (repository *GormTelemetryRepository) Save(context context.Context, reading models.TelemetryReading) error {
 	sensors := normalizeSensors(reading)
+	temperature, humidity := resolveSensorColumns(reading, sensors)
 	sensorsJSON, marshalError := json.Marshal(sensors)
 	if marshalError != nil {
 		return marshalError
@@ -32,8 +34,9 @@ func (repository *GormTelemetryRepository) Save(context context.Context, reading
 
 	entity := models.SensorData{
 		DeviceID:    reading.DeviceID,
-		Temperature: reading.Temperature,
-		Humidity:    reading.Humidity,
+		SensorID:    sensorIDForReading(reading, sensors),
+		Temperature: temperature,
+		Humidity:    humidity,
 		Sensors:     string(sensorsJSON),
 		Meta:        string(metaJSON),
 		CreatedAt:   reading.CreatedAt,
@@ -106,6 +109,27 @@ func (repository *GormTelemetryRepository) ListByDeviceID(context context.Contex
 	return toReadings(entities), nil
 }
 
+func (repository *GormTelemetryRepository) ListByDeviceIDAndSensorID(context context.Context, deviceID, sensorID string) ([]models.TelemetryReading, error) {
+	var entities []models.SensorData
+	db := repository.database.WithContext(context).
+		Where("sensor_data.device_id = ? AND sensor_data.sensor_id = ?", deviceID, sensorID)
+
+	if organizationID, ok := organizationIDFromContext(context); ok {
+		db = db.
+			Joins("JOIN devices ON devices.device_id = sensor_data.device_id").
+			Where("devices.organization_id = ?", organizationID)
+	}
+
+	err := db.
+		Order("sensor_data.created_at DESC").
+		Find(&entities).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return toReadings(entities), nil
+}
+
 func (repository *GormTelemetryRepository) ListByDeviceIDWithDateRange(context context.Context, deviceID string, dateRange DateRange) ([]models.TelemetryReading, error) {
 	var entities []models.SensorData
 	query := repository.database.WithContext(context).Where("sensor_data.device_id = ?", deviceID)
@@ -160,14 +184,24 @@ func (repository *GormTelemetryRepository) GetLatestByDeviceID(context context.C
 	if sensorTemperature, hasTemperature := sensors["temperature"]; hasTemperature {
 		temperature = sensorTemperature
 	}
+	if sensorTemperature, hasTemperature := sensors["dht11-temp"]; hasTemperature {
+		temperature = sensorTemperature
+	}
 
 	humidity := entity.Humidity
 	if sensorHumidity, hasHumidity := sensors["humidity"]; hasHumidity {
 		humidity = sensorHumidity
 	}
+	if sensorHumidity, hasHumidity := sensors["humidity_dht11"]; hasHumidity {
+		humidity = sensorHumidity
+	}
+	if sensorHumidity, hasHumidity := sensors["dht11-humidity"]; hasHumidity {
+		humidity = sensorHumidity
+	}
 
 	return models.TelemetryReading{
 		DeviceID:    entity.DeviceID,
+		SensorID:    sensorIDValue(entity.SensorID),
 		Temperature: temperature,
 		Humidity:    humidity,
 		Sensors:     sensors,
@@ -185,14 +219,24 @@ func toReadings(entities []models.SensorData) []models.TelemetryReading {
 		if sensorTemperature, hasTemperature := sensors["temperature"]; hasTemperature {
 			temperature = sensorTemperature
 		}
+		if sensorTemperature, hasTemperature := sensors["dht11-temp"]; hasTemperature {
+			temperature = sensorTemperature
+		}
 
 		humidity := entity.Humidity
 		if sensorHumidity, hasHumidity := sensors["humidity"]; hasHumidity {
 			humidity = sensorHumidity
 		}
+		if sensorHumidity, hasHumidity := sensors["humidity_dht11"]; hasHumidity {
+			humidity = sensorHumidity
+		}
+		if sensorHumidity, hasHumidity := sensors["dht11-humidity"]; hasHumidity {
+			humidity = sensorHumidity
+		}
 
 		readings = append(readings, models.TelemetryReading{
 			DeviceID:    entity.DeviceID,
+			SensorID:    sensorIDValue(entity.SensorID),
 			Temperature: temperature,
 			Humidity:    humidity,
 			Sensors:     sensors,
@@ -202,6 +246,37 @@ func toReadings(entities []models.SensorData) []models.TelemetryReading {
 	}
 
 	return readings
+}
+
+
+func sensorIDForReading(reading models.TelemetryReading, sensors map[string]float64) *string {
+	trimmedSensorID := strings.TrimSpace(reading.SensorID)
+	if trimmedSensorID != "" {
+		return &trimmedSensorID
+	}
+
+	if len(sensors) != 1 {
+		return nil
+	}
+
+	for sensorID := range sensors {
+		trimmedSensorID := strings.TrimSpace(sensorID)
+		if trimmedSensorID == "" {
+			return nil
+		}
+
+		return &trimmedSensorID
+	}
+
+	return nil
+}
+
+func sensorIDValue(sensorID *string) string {
+	if sensorID == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(*sensorID)
 }
 
 func normalizeSensors(reading models.TelemetryReading) map[string]float64 {
@@ -216,6 +291,30 @@ func normalizeSensors(reading models.TelemetryReading) map[string]float64 {
 	}
 
 	return sensors
+}
+
+func resolveSensorColumns(reading models.TelemetryReading, sensors map[string]float64) (float64, float64) {
+	temperature := reading.Temperature
+	humidity := reading.Humidity
+
+	if value, ok := sensors["temperature"]; ok {
+		temperature = value
+	}
+	if value, ok := sensors["dht11-temp"]; ok {
+		temperature = value
+	}
+
+	if value, ok := sensors["humidity"]; ok {
+		humidity = value
+	}
+	if value, ok := sensors["humidity_dht11"]; ok {
+		humidity = value
+	}
+	if value, ok := sensors["dht11-humidity"]; ok {
+		humidity = value
+	}
+
+	return temperature, humidity
 }
 
 func parseMeta(raw string) *models.DeviceMeta {

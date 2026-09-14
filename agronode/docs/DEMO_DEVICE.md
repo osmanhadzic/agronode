@@ -2,14 +2,15 @@
 
 A virtual MQTT device is available for testing the full pipeline without physical ESP32 hardware.
 
-Published sensors include:
+Published telemetry is per-sensor (one message per sensor):
 
-- `temperature`
-- `humidity`
-- `co2`
-- `soil_moisture`
-- `battery`
-- `signal_strength`
+- `dht11-temp`
+- `dht11-humidity`
+
+Published status metadata goes to dedicated topic:
+
+- Topic: `agronode/{deviceId}/status`
+- Fields: `online`, `signal_strength`
 
 ## Start demo device
 

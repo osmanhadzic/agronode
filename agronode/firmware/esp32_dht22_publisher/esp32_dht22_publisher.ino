@@ -14,7 +14,10 @@ const char* MQTT_HOST = "192.168.193.106";
 const uint16_t MQTT_PORT = 1883;
 
 const char* DEVICE_ID_BASE = "Plastenik";
-const char* FIRMWARE_VERSION = "1.0.1";
+const char* FIRMWARE_VERSION = "1.0.2";
+const char* SENSOR_MODULE_ID = "dht11";
+const char* TEMPERATURE_SENSOR_ID = "dht11-temp";
+const char* HUMIDITY_SENSOR_ID = "dht11-humidity";
 const unsigned long PUBLISH_INTERVAL_MS = 5000;
 const unsigned long ACTIVATION_SIGNAL_DURATION_MS = 5000;
 
@@ -29,6 +32,7 @@ PubSubClient mqttClient(wifiClient);
 unsigned long lastPublishMs = 0;
 unsigned long activationSignalUntilMs = 0;
 char topicBuffer[128];
+char statusTopicBuffer[128];
 char activationTopicBuffer[128];
 char deviceIdBuffer[64];
 
@@ -42,6 +46,7 @@ void handleActivationPayload(const String& payload);
 void onMqttMessage(char* topic, byte* payload, unsigned int length);
 bool payloadHasDeviceId(const String& payload, const char* expectedDeviceId);
 bool payloadHasBooleanField(const String& payload, const char* fieldName, bool expectedValue);
+bool publishDeviceStatus(bool online, unsigned long epochSeconds);
 
 void setup() {
   Serial.begin(115200);
@@ -50,6 +55,15 @@ void setup() {
   buildRuntimeDeviceId();
   Serial.print("Runtime DEVICE_ID: ");
   Serial.println(deviceIdBuffer);
+  Serial.print("Firmware version: ");
+  Serial.println(FIRMWARE_VERSION);
+  Serial.print("Sensor module: ");
+  Serial.println(SENSOR_MODULE_ID);
+  Serial.print("Temperature sensor ID: ");
+  Serial.println(TEMPERATURE_SENSOR_ID);
+  Serial.print("Humidity sensor ID: ");
+  Serial.println(HUMIDITY_SENSOR_ID);
+  Serial.println("Publish mode: per-sensor");
 
   dht.begin();
   pinMode(ACTIVATION_PIN, OUTPUT);
@@ -57,6 +71,7 @@ void setup() {
 
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(onMqttMessage);
+  mqttClient.setBufferSize(512);
 
   ensureWiFiConnected();
   ensureMqttConnected();   // <-- obavezno pre registracije
@@ -91,10 +106,6 @@ void registerDevice() {
 }
 
 void ensureWiFiConnected() {
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("WiFi already connected");
-    return;
-  }
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -210,25 +221,25 @@ bool payloadHasBooleanField(const String& payload, const char* fieldName, bool e
   return payload.startsWith("false", valueIndex);
 }
 
-bool publishTelemetry(float temperature, float humidity, unsigned long epochSeconds) {
+bool publishSensorTelemetry(const char* sensorID, float sensorValue, unsigned long epochSeconds) {
   char payload[448];
   int rssi = (int)WiFi.RSSI();
   unsigned long uptimeSeconds = millis() / 1000UL;
   int length = snprintf(
     payload,
     sizeof(payload),
-    "{\"deviceId\":\"%s\",\"timestamp\":%lu,\"version\":1,"
+    "{\"deviceId\":\"%s\",\"sensorId\":\"%s\",\"timestamp\":%lu,\"version\":1,"
     "\"meta\":{\"fw\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"uptime\":%lu},"
-    "\"sensors\":{\"temperature\":%.2f,\"humidity\":%.2f,\"signal_strength\":%d}}",
+    "\"sensors\":{\"%s\":%.2f}}",
     deviceIdBuffer,
+    sensorID,
     epochSeconds,
     FIRMWARE_VERSION,
     WiFi.localIP().toString().c_str(),
     rssi,
     uptimeSeconds,
-    temperature,
-    humidity,
-    rssi
+    sensorID,
+    sensorValue
   );
 
   if (length <= 0 || length >= (int)sizeof(payload)) {
@@ -236,8 +247,17 @@ bool publishTelemetry(float temperature, float humidity, unsigned long epochSeco
     return false;
   }
 
+  Serial.print("Telemetry payload length: ");
+  Serial.println(length);
+
   snprintf(topicBuffer, sizeof(topicBuffer), "agronode/%s/telemetry", deviceIdBuffer);
 
+  Serial.print("Telemetry SENSOR_ID: ");
+  Serial.println(sensorID);
+  Serial.print("Telemetry firmware: ");
+  Serial.println(FIRMWARE_VERSION);
+  Serial.print("Telemetry value: ");
+  Serial.println(sensorValue, 2);
   Serial.print("Topic: ");
   Serial.println(topicBuffer);
   Serial.print("Payload: ");
@@ -247,6 +267,51 @@ bool publishTelemetry(float temperature, float humidity, unsigned long epochSeco
 
   Serial.print("Publish: ");
   Serial.println(ok ? "OK" : "FAILED");
+  if (!ok) {
+    Serial.print("MQTT state on publish fail: ");
+    Serial.println(mqttClient.state());
+  }
+
+  return ok;
+}
+
+bool publishDeviceStatus(bool online, unsigned long epochSeconds) {
+  char payload[384];
+  int rssi = (int)WiFi.RSSI();
+  unsigned long uptimeSeconds = millis() / 1000UL;
+  int length = snprintf(
+    payload,
+    sizeof(payload),
+    "{\"deviceId\":\"%s\",\"timestamp\":%lu,\"online\":%s,\"signal_strength\":%d,"
+    "\"meta\":{\"fw\":\"%s\",\"ip\":\"%s\",\"uptime\":%lu}}",
+    deviceIdBuffer,
+    epochSeconds,
+    online ? "true" : "false",
+    rssi,
+    FIRMWARE_VERSION,
+    WiFi.localIP().toString().c_str(),
+    uptimeSeconds
+  );
+
+  if (length <= 0 || length >= (int)sizeof(payload)) {
+    Serial.println("Status payload build failed");
+    return false;
+  }
+
+  snprintf(statusTopicBuffer, sizeof(statusTopicBuffer), "agronode/%s/status", deviceIdBuffer);
+
+  Serial.print("Status topic: ");
+  Serial.println(statusTopicBuffer);
+  Serial.print("Status payload: ");
+  Serial.println(payload);
+
+  bool ok = mqttClient.publish(statusTopicBuffer, payload);
+  Serial.print("Status publish: ");
+  Serial.println(ok ? "OK" : "FAILED");
+  if (!ok) {
+    Serial.print("MQTT state on status publish fail: ");
+    Serial.println(mqttClient.state());
+  }
 
   return ok;
 }
@@ -314,7 +379,15 @@ void loop() {
   Serial.println(humidity);
 
   unsigned long epochSeconds = currentEpochSeconds();
-  publishTelemetry(temperature, humidity, epochSeconds);
+  bool temperaturePublished = publishSensorTelemetry(TEMPERATURE_SENSOR_ID, temperature, epochSeconds);
+  delay(40);
+  bool humidityPublished = publishSensorTelemetry(HUMIDITY_SENSOR_ID, humidity, epochSeconds);
+  delay(40);
+  bool statusPublished = publishDeviceStatus(true, epochSeconds);
+
+  if (!temperaturePublished || !humidityPublished || !statusPublished) {
+    Serial.println("One or more publishes failed");
+  }
 }
 
 void testDHT() {
@@ -334,5 +407,5 @@ void testDHT() {
     Serial.println(h);
   }
 
-  delay(3000);
+  delay(500);
 }

@@ -7,8 +7,9 @@ export interface DeviceMeta {
 
 export interface TelemetryReading {
   deviceId: string
-  temperature: number
-  humidity: number
+  sensorId?: string
+  temperature?: number | null
+  humidity?: number | null
   sensors?: Record<string, number>
   meta?: DeviceMeta
   createdAt: string
@@ -17,6 +18,7 @@ export interface TelemetryReading {
 export interface DeviceSummary {
   id: number
   deviceId: string
+  deviceType?: 'publisher' | 'receiver' | 'unknown'
   status: string
   firmwareVersion?: string
   metadata?: {
@@ -39,14 +41,14 @@ export interface DeviceStatusEvent {
 
 export interface SensorTrigger {
   deviceId: string
-  sensor: string
+  sensorId: string
   min?: number
   max?: number
   targetDeviceId?: string
 }
 
 export interface TriggerListItem {
-  sensor: string
+  sensorId: string
   min?: number
   max?: number
   targetDeviceId?: string
@@ -55,4 +57,12 @@ export interface TriggerListItem {
 export interface TriggerListResponse {
   deviceId: string
   triggers: TriggerListItem[]
+}
+
+export interface DeviceSensor {
+  id: number
+  deviceId: string
+  sensorId: string
+  createdAt: string
+  updatedAt: string
 }

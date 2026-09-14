@@ -25,6 +25,7 @@ type TelemetryEnvelope struct {
 	Topic           string
 	DeviceID        string
 	PayloadDeviceID string
+	SensorID        string
 	Timestamp       int64
 	Sensors         map[string]float64
 	Meta            *DeviceMeta
@@ -36,6 +37,7 @@ type TelemetryConsumer interface {
 
 type telemetryPayload struct {
 	DeviceID  string             `json:"deviceId"`
+	SensorID  string             `json:"sensorId"`
 	Timestamp int64              `json:"timestamp"`
 	Sensors   map[string]float64 `json:"sensors"`
 	Meta      *DeviceMeta        `json:"meta"`
@@ -53,7 +55,7 @@ type ActivationCommand struct {
 }
 
 type DeviceRegistrar interface {
-	RegisterDevice(ctx context.Context, deviceID string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
+	RegisterDevice(ctx context.Context, deviceID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
 }
 
 type Client struct {
@@ -184,7 +186,7 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 			registrationContext = tenancy.WithOrganizationID(registrationContext, client.defaultOrganizationID)
 		}
 
-		if _, err := client.registrar.RegisterDevice(registrationContext, registration.DeviceID, registration.FirmwareVersion, registration.Metadata, "", "", registration.Tags); err != nil {
+		if _, err := client.registrar.RegisterDevice(registrationContext, registration.DeviceID, "publisher", registration.FirmwareVersion, registration.Metadata, "", "", registration.Tags); err != nil {
 			client.logger.Error("device registration from mqtt failed", "deviceId", registration.DeviceID, "error", err)
 			return
 		}
@@ -207,6 +209,7 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 		Topic:           message.Topic(),
 		DeviceID:        deviceID,
 		PayloadDeviceID: payload.DeviceID,
+		SensorID:        payload.SensorID,
 		Timestamp:       payload.Timestamp,
 		Sensors:         payload.Sensors,
 		Meta:            payload.Meta,
@@ -248,8 +251,8 @@ func extractDeviceIDFromTopic(topic string) (string, error) {
 		return "", fmt.Errorf("topic must start with agronode")
 	}
 
-	if parts[2] != "telemetry" && parts[2] != "register" {
-		return "", fmt.Errorf("topic must match agronode/{deviceId}/telemetry or agronode/{deviceId}/register")
+	if parts[2] != "telemetry" && parts[2] != "register" && parts[2] != "status" {
+		return "", fmt.Errorf("topic must match agronode/{deviceId}/telemetry, agronode/{deviceId}/status or agronode/{deviceId}/register")
 	}
 
 	deviceID := strings.TrimSpace(parts[1])
@@ -271,6 +274,12 @@ func parseTelemetryPayload(payloadBytes []byte) (telemetryPayload, error) {
 	if deviceIDBytes, hasDeviceID := raw["deviceId"]; hasDeviceID {
 		if err := json.Unmarshal(deviceIDBytes, &payload.DeviceID); err != nil {
 			return telemetryPayload{}, fmt.Errorf("invalid deviceId: %w", err)
+		}
+	}
+
+	if sensorIDBytes, hasSensorID := raw["sensorId"]; hasSensorID {
+		if err := json.Unmarshal(sensorIDBytes, &payload.SensorID); err != nil {
+			return telemetryPayload{}, fmt.Errorf("invalid sensorId: %w", err)
 		}
 	}
 
@@ -303,7 +312,7 @@ func parseTelemetryPayload(payloadBytes []byte) (telemetryPayload, error) {
 
 	if len(payload.Sensors) == 0 {
 		for key, valueBytes := range raw {
-			if key == "deviceId" || key == "timestamp" || key == "sensors" || key == "version" {
+			if key == "deviceId" || key == "sensorId" || key == "timestamp" || key == "sensors" || key == "version" {
 				continue
 			}
 

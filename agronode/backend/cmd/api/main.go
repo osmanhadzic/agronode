@@ -48,21 +48,20 @@ func main() {
 
 	store := database.NewStore(databaseConnection)
 	telemetryRepository := repositories.NewGormTelemetryRepository(store.DB)
+	sensorRepository := repositories.NewGormSensorRepository(store.DB)
 	triggerRepository := repositories.NewGormTriggerRepository(store.DB)
 	userRepository := repositories.NewGormUserRepository(store.DB)
 	if err := services.EnsureBootstrapAuthData(startupContext, store.DB, cfg, logger); err != nil {
 		logger.Error("bootstrap auth data failed", "error", err)
 		os.Exit(1)
 	}
-	if err := services.EnsureDemoSeedData(startupContext, store.DB, cfg, logger); err != nil {
-		logger.Error("demo seed data failed", "error", err)
-		os.Exit(1)
-	}
 	authService := services.NewAuthLoginService(userRepository, auth.SessionConfig{Secret: cfg.SessionSecret, TTL: cfg.FrontendSessionTTL})
 	telemetryService := services.NewTelemetryService(telemetryRepository, logger)
 	deviceRepository := repositories.NewGormDeviceRepository(store.DB)
 	deviceService := services.NewDeviceService(deviceRepository, logger)
+	deviceService.SetSensorRepository(sensorRepository)
 	telemetryService.SetTriggerRepository(triggerRepository)
+	telemetryService.SetSensorRepository(sensorRepository)
 	realtimeHub := realtime.NewHub(logger)
 	telemetryService.SetBroadcaster(realtimeHub)
 	telemetryService.SetPresenceUpdater(deviceService)
