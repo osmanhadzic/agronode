@@ -19,9 +19,10 @@ import (
 var ErrDeviceValidation = errors.New("device validation failed")
 
 type DeviceService struct {
-	repository     repositories.DeviceRepository
-	logger         *slog.Logger
-	eventPublisher DeviceEventPublisher
+	repository       repositories.DeviceRepository
+	sensorRepository repositories.SensorRepository
+	logger           *slog.Logger
+	eventPublisher   DeviceEventPublisher
 }
 
 type DevicePresenceUpdater interface {
@@ -34,6 +35,10 @@ type DeviceEventPublisher interface {
 
 type DeviceSensorDiscoveryUpdater interface {
 	UpdateDiscoveredSensors(ctx context.Context, deviceID string, sensorNames []string) error
+}
+
+type DeviceSensorLister interface {
+	ListSensors(ctx context.Context, deviceID string) ([]models.Sensor, error)
 }
 
 const (
@@ -60,6 +65,24 @@ func NewDeviceService(repository repositories.DeviceRepository, logger *slog.Log
 // SetEventPublisher sets the event publisher for device status events
 func (service *DeviceService) SetEventPublisher(publisher DeviceEventPublisher) {
 	service.eventPublisher = publisher
+}
+
+// SetSensorRepository sets the optional sensor repository used to persist discovered sensors.
+func (service *DeviceService) SetSensorRepository(repository repositories.SensorRepository) {
+	service.sensorRepository = repository
+}
+
+// ListSensors returns sensors registered for a device.
+func (service *DeviceService) ListSensors(ctx context.Context, deviceID string) ([]models.Sensor, error) {
+	if err := validateDeviceID(deviceID); err != nil {
+		return nil, err
+	}
+
+	if service.sensorRepository == nil {
+		return []models.Sensor{}, nil
+	}
+
+	return service.sensorRepository.ListByDeviceID(ctx, deviceID)
 }
 
 // RegisterDevice registers a new device or returns existing one (idempotent)
@@ -332,6 +355,12 @@ func (service *DeviceService) UpdateDiscoveredSensors(ctx context.Context, devic
 
 	changed := false
 	for _, sensor := range normalizedSensors {
+		if service.sensorRepository != nil {
+			if err := service.sensorRepository.Upsert(ctx, deviceID, sensor); err != nil {
+				return err
+			}
+		}
+
 		if _, ok := existing[sensor]; ok {
 			continue
 		}

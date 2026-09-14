@@ -10,6 +10,7 @@ export interface DateFilterOptions {
   endDate?: string
 }
 import type {
+  DeviceSensor,
   SensorTrigger,
   TelemetryReading,
   TriggerListResponse,
@@ -46,6 +47,17 @@ export async function fetchTelemetryByDeviceId(
   return data
 }
 
+export async function fetchTelemetryByDeviceIdAndSensorId(
+  deviceId: string,
+  sensorId: string,
+): Promise<TelemetryReading[]> {
+  const encodedSensor = encodeURIComponent(sensorId)
+  const { data } = await httpClient.get<TelemetryReading[]>(
+    `/api/data/${deviceId}/${encodedSensor}`,
+  )
+  return data
+}
+
 export async function fetchLatestTelemetryByDeviceId(
   deviceId: string,
 ): Promise<TelemetryReading | null> {
@@ -67,11 +79,19 @@ export async function fetchDevices(): Promise<DeviceSummary[]> {
   const { data } = await httpClient.get<DeviceSummary[]>('/api/devices')
   return data
 }
+
+export async function fetchSensorsByDeviceId(
+  deviceId: string,
+): Promise<DeviceSensor[]> {
+  const { data } = await httpClient.get<DeviceSensor[]>(`/api/devices/${deviceId}/sensors`)
+  return data
+}
+
 export async function fetchSensorTriggerByDeviceId(
   deviceId: string,
-  sensor: string,
+  sensorId: string,
 ): Promise<SensorTrigger | null> {
-  const encodedSensor = encodeURIComponent(sensor)
+  const encodedSensor = encodeURIComponent(sensorId)
 
   try {
     const { data } = await httpClient.get<SensorTrigger>(
@@ -89,10 +109,10 @@ export async function fetchSensorTriggerByDeviceId(
 
 export async function saveSensorTriggerByDeviceId(
   deviceId: string,
-  sensor: string,
+  sensorId: string,
   payload: { min?: number; max?: number; targetDeviceId?: string },
 ): Promise<SensorTrigger> {
-  const encodedSensor = encodeURIComponent(sensor)
+  const encodedSensor = encodeURIComponent(sensorId)
 
   const { data } = await httpClient.put<SensorTrigger>(
     `/api/triggers/${deviceId}/${encodedSensor}`,
@@ -110,8 +130,8 @@ export async function fetchTriggersByDeviceId(
 
 export async function deleteSensorTriggerByDeviceId(
   deviceId: string,
-  sensor: string,
+  sensorId: string,
 ): Promise<void> {
-  const encodedSensor = encodeURIComponent(sensor)
+  const encodedSensor = encodeURIComponent(sensorId)
   await httpClient.delete(`/api/triggers/${deviceId}/${encodedSensor}`)
 }

@@ -11,6 +11,7 @@ type DeviceMeta struct {
 
 type TelemetryReading struct {
 	DeviceID    string             `json:"deviceId"`
+	SensorID    string             `json:"sensorId,omitempty"`
 	Temperature float64            `json:"temperature"`
 	Humidity    float64            `json:"humidity"`
 	Sensors     map[string]float64 `json:"sensors,omitempty"`

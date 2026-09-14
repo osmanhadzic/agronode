@@ -25,6 +25,9 @@ type deviceRegistrationServiceStub struct {
 	listDevicesInput  services.DeviceListParams
 	listDevicesResult []models.Device
 	listDevicesError  error
+	listSensorsInput  string
+	listSensorsResult []models.Sensor
+	listSensorsError  error
 	registerInput     *struct {
 		deviceID          string
 		firmware          string
@@ -66,6 +69,14 @@ func (stub *deviceRegistrationServiceStub) ListDevices(_ context.Context, params
 		return nil, stub.listDevicesError
 	}
 	return stub.listDevicesResult, nil
+}
+
+func (stub *deviceRegistrationServiceStub) ListSensors(_ context.Context, deviceID string) ([]models.Sensor, error) {
+	stub.listSensorsInput = deviceID
+	if stub.listSensorsError != nil {
+		return nil, stub.listSensorsError
+	}
+	return stub.listSensorsResult, nil
 }
 
 func testDeviceLogger() *slog.Logger {
@@ -326,6 +337,47 @@ func TestListDevices(t *testing.T) {
 
 		if responseRecorder.Code != http.StatusBadRequest {
 			t.Fatalf("expected status %d, got %d", http.StatusBadRequest, responseRecorder.Code)
+		}
+	})
+}
+
+func TestListDeviceSensors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("returns sensors for device", func(t *testing.T) {
+		now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+		service := &deviceRegistrationServiceStub{
+			listSensorsResult: []models.Sensor{
+				{ID: 1, DeviceID: "esp32-lab", SensorID: "temperature", CreatedAt: now, UpdatedAt: now},
+				{ID: 2, DeviceID: "esp32-lab", SensorID: "humidity", CreatedAt: now, UpdatedAt: now},
+			},
+		}
+
+		router := gin.New()
+		api := router.Group("/api")
+		RegisterDeviceRoutes(api, testDeviceLogger(), service)
+
+		request := httptest.NewRequest(http.MethodGet, "/api/devices/esp32-lab/sensors", nil)
+		addOrganizationHeader(request)
+		responseRecorder := httptest.NewRecorder()
+
+		router.ServeHTTP(responseRecorder, request)
+
+		if responseRecorder.Code != http.StatusOK {
+			t.Fatalf("expected status %d, got %d", http.StatusOK, responseRecorder.Code)
+		}
+
+		if service.listSensorsInput != "esp32-lab" {
+			t.Fatalf("expected device id esp32-lab, got %q", service.listSensorsInput)
+		}
+
+		var responseBody []map[string]any
+		if err := json.Unmarshal(responseRecorder.Body.Bytes(), &responseBody); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(responseBody) != 2 {
+			t.Fatalf("expected 2 sensors, got %d", len(responseBody))
 		}
 	})
 }

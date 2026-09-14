@@ -4,6 +4,8 @@ import {
   deleteSensorTriggerByDeviceId,
   fetchAllTelemetry,
   fetchDevices,
+  fetchTelemetryByDeviceIdAndSensorId,
+  fetchSensorsByDeviceId,
   fetchSensorTriggerByDeviceId,
   fetchTelemetryByDeviceId,
   fetchTriggersByDeviceId,
@@ -19,7 +21,7 @@ import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
 import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector'
 import { clearSession, loadSession } from '../api/session'
-import type { TelemetryReading, TriggerListItem } from '../types/telemetry'
+import type { TelemetryReading, TriggerListItem, DeviceSensor } from '../types/telemetry'
 
 type TriggerEvent = {
   id: string
@@ -93,11 +95,13 @@ function downsampleData(
 export function DashboardPage() {
   const [telemetry, setTelemetry] = useState<TelemetryReading[]>([])
   const [liveData, setLiveData] = useState<TelemetryReading[]>([])
+  const [liveSensorSnapshots, setLiveSensorSnapshots] = useState<Record<string, Record<string, number>>>({})
   const [deviceStatuses, setDeviceStatuses] = useState<Record<string, string>>({})
   const [latestDeviceReading, setLatestDeviceReading] =
     useState<TelemetryReading | null>(null)
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [selectedSensors, setSelectedSensors] = useState<string[]>([])
+  const [deviceSensors, setDeviceSensors] = useState<DeviceSensor[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [dataMode, setDataMode] = useState<'live' | 'history'>('live')
@@ -105,6 +109,7 @@ export function DashboardPage() {
     useState<DateFilterPeriod>('hour')
   const [customStartDate, setCustomStartDate] = useState<string>()
   const [customEndDate, setCustomEndDate] = useState<string>()
+  const [selectedTelemetrySensor, setSelectedTelemetrySensor] = useState('all')
   const [updateQueue, setUpdateQueue] = useState<TelemetryReading[]>([])
 
   // Batch websocket messages to avoid excessive UI updates.
@@ -160,11 +165,98 @@ export function DashboardPage() {
   const [activeTriggerEvent, setActiveTriggerEvent] = useState<TriggerEvent | null>(null)
   const [triggerEvents, setTriggerEvents] = useState<TriggerEvent[]>([])
   const [toastTriggerEvent, setToastTriggerEvent] = useState<TriggerEvent | null>(null)
+  const [activeTab, setActiveTab] = useState<'overview' | 'telemetry' | 'sensors' | 'triggers'>('overview')
   const triggerActivationState = useRef<Record<string, { min: boolean; max: boolean }>>({})
   const selectedDeviceRef = useRef('')
+  const deviceSensorIdsRef = useRef<Set<string>>(new Set())
   const triggerMapRef = useRef<Record<string, TriggerListItem>>({})
   const toastTimerRef = useRef<number | null>(null)
   const session = loadSession()
+  const dashboardTabs = [
+    { id: 'overview', label: 'Pregled' },
+    { id: 'telemetry', label: 'Telemetrija' },
+    { id: 'sensors', label: 'Senzori' },
+    { id: 'triggers', label: 'Triggeri' },
+  ] as const
+
+  const getReadingSensorValues = useCallback((reading: TelemetryReading): Record<string, number> => {
+    const readingSensors = reading.sensors ?? {}
+    if (Object.keys(readingSensors).length > 0) {
+      return readingSensors
+    }
+
+    const fallback: Record<string, number> = {}
+
+    if (!reading.sensorId) {
+      if (typeof reading.temperature === 'number') {
+        fallback.temperature = reading.temperature
+      }
+      if (typeof reading.humidity === 'number') {
+        fallback.humidity = reading.humidity
+      }
+
+      return fallback
+    }
+
+    if (
+      (reading.sensorId === 'temperature' || reading.sensorId === 'dht11-temp') &&
+      typeof reading.temperature === 'number'
+    ) {
+      fallback[reading.sensorId] = reading.temperature
+    }
+
+    if (
+      (reading.sensorId === 'humidity' ||
+        reading.sensorId === 'humidity_dht11' ||
+        reading.sensorId === 'dht11-humidity') &&
+      typeof reading.humidity === 'number'
+    ) {
+      fallback[reading.sensorId] = reading.humidity
+    }
+
+    return fallback
+  }, [])
+
+  const mergeTelemetryReadings = useCallback((readings: TelemetryReading[]) => {
+    const deduplicatedByKey = new Map<string, TelemetryReading>()
+
+    for (const reading of readings) {
+      const key = `${reading.deviceId}:${reading.sensorId ?? 'na'}:${reading.createdAt}`
+      deduplicatedByKey.set(key, reading)
+    }
+
+    return [...deduplicatedByKey.values()].sort(
+      (left, right) =>
+        new Date(right.createdAt).getTime() -
+        new Date(left.createdAt).getTime(),
+    )
+  }, [])
+
+  const mergeLiveSensorSnapshot = useCallback((readings: TelemetryReading[]) => {
+    if (readings.length === 0) {
+      return
+    }
+
+    setLiveSensorSnapshots((previous) => {
+      const next = { ...previous }
+
+      for (const reading of readings) {
+        const sensorValues = getReadingSensorValues(reading)
+        if (Object.keys(sensorValues).length === 0) {
+          continue
+        }
+
+        const deviceSnapshot = { ...(next[reading.deviceId] ?? {}) }
+        for (const [sensorKey, value] of Object.entries(sensorValues)) {
+          deviceSnapshot[sensorKey] = value
+        }
+
+        next[reading.deviceId] = deviceSnapshot
+      }
+
+      return next
+    })
+  }, [getReadingSensorValues])
 
   useEffect(() => {
     let isMounted = true
@@ -174,11 +266,7 @@ export function DashboardPage() {
         return
       }
 
-      const sensorValues: Record<string, number> = {
-        temperature: reading.temperature,
-        humidity: reading.humidity,
-        ...(reading.sensors ?? {}),
-      }
+      const sensorValues = getReadingSensorValues(reading)
 
       const nextEvents: TriggerEvent[] = []
 
@@ -283,29 +371,96 @@ export function DashboardPage() {
       setError('')
 
       try {
+        const devices = await fetchDevices()
+
+        let sensors: DeviceSensor[] = []
+        let sensorIdList: string[] = []
+
+        if (selectedDeviceId) {
+          try {
+            sensors = await fetchSensorsByDeviceId(selectedDeviceId)
+            sensorIdList = [
+              ...new Set(
+                sensors
+                  .map((sensor) => sensor.sensorId.trim())
+                  .filter((sensorId) => sensorId.length > 0),
+              ),
+            ]
+          } catch {
+            sensors = []
+            sensorIdList = []
+          }
+        }
+
+        const fetchBySensorList = async () => {
+          if (!selectedDeviceId || sensorIdList.length === 0) {
+            return [] as TelemetryReading[]
+          }
+
+          const dataBySensor = await Promise.all(
+            sensorIdList.map((sensorId) =>
+              fetchTelemetryByDeviceIdAndSensorId(selectedDeviceId, sensorId),
+            ),
+          )
+
+          return mergeTelemetryReadings(dataBySensor.flat())
+        }
+
         let readings: TelemetryReading[]
 
         if (dataMode === 'live') {
           if (selectedDeviceId) {
-            readings = await fetchTelemetryByDeviceId(selectedDeviceId, {
-              period: 'hour',
-            })
+            if (selectedTelemetrySensor !== 'all') {
+              readings = await fetchTelemetryByDeviceIdAndSensorId(
+                selectedDeviceId,
+                selectedTelemetrySensor,
+              )
+            } else if (sensorIdList.length > 0) {
+              readings = await fetchBySensorList()
+            } else {
+              readings = await fetchTelemetryByDeviceId(selectedDeviceId, {
+                period: 'hour',
+              })
+            }
           } else {
             readings = await fetchAllTelemetry()
           }
         } else if (selectedDeviceId && dateFilterPeriod) {
-          readings = await fetchTelemetryByDeviceId(selectedDeviceId, {
-            period: dateFilterPeriod,
-            startDate: customStartDate,
-            endDate: customEndDate,
-          })
+          if (selectedTelemetrySensor !== 'all') {
+            readings = await fetchTelemetryByDeviceIdAndSensorId(
+              selectedDeviceId,
+              selectedTelemetrySensor,
+            )
+          } else {
+            const filtered = await fetchTelemetryByDeviceId(selectedDeviceId, {
+              period: dateFilterPeriod,
+              startDate: customStartDate,
+              endDate: customEndDate,
+            })
+
+            if (sensorIdList.length > 0) {
+              const sensorIdSet = new Set(sensorIdList)
+              readings = filtered.filter((reading) =>
+                reading.sensorId ? sensorIdSet.has(reading.sensorId) : false,
+              )
+            } else {
+              readings = filtered
+            }
+          }
         } else if (selectedDeviceId) {
-          readings = await fetchTelemetryByDeviceId(selectedDeviceId)
+          if (selectedTelemetrySensor !== 'all') {
+            readings = await fetchTelemetryByDeviceIdAndSensorId(
+              selectedDeviceId,
+              selectedTelemetrySensor,
+            )
+          } else if (sensorIdList.length > 0) {
+            readings = await fetchBySensorList()
+          } else {
+            readings = await fetchTelemetryByDeviceId(selectedDeviceId)
+          }
         } else {
           readings = await fetchAllTelemetry()
         }
-
-        const devices = await fetchDevices()
 
         if (!isMounted) {
           return
@@ -313,6 +468,7 @@ export function DashboardPage() {
 
         if (dataMode === 'live') {
           setLiveData(readings)
+          mergeLiveSensorSnapshot(readings)
         } else {
           setTelemetry(readings)
         }
@@ -323,6 +479,8 @@ export function DashboardPage() {
             return result
           }, {}),
         )
+
+        setDeviceSensors(sensors)
 
         const availableDeviceIds = [
           ...new Set([
@@ -375,7 +533,28 @@ export function DashboardPage() {
 
         setSelectedDeviceId((previous) => previous || reading.deviceId)
 
+        mergeLiveSensorSnapshot([reading])
+
         if (dataMode === 'live') {
+          const selectedDevice = selectedDeviceRef.current
+          const knownSensorIds = deviceSensorIdsRef.current
+          const isSelectedDeviceReading =
+            selectedDevice.length > 0 && reading.deviceId === selectedDevice
+          const isKnownSensorReading =
+            knownSensorIds.size === 0 ||
+            (reading.sensorId ? knownSensorIds.has(reading.sensorId) : false)
+          const isSelectedSensorReading =
+            selectedTelemetrySensor === 'all' ||
+            selectedTelemetrySensor === reading.sensorId
+
+          if (isSelectedDeviceReading && !isKnownSensorReading) {
+            return
+          }
+
+          if (isSelectedDeviceReading && !isSelectedSensorReading) {
+            return
+          }
+
           setUpdateQueue((previous) => [...previous, reading])
         }
 
@@ -414,10 +593,13 @@ export function DashboardPage() {
     }
   }, [
     selectedDeviceId,
+    selectedTelemetrySensor,
     dataMode,
     dateFilterPeriod,
     customStartDate,
     customEndDate,
+    mergeLiveSensorSnapshot,
+    mergeTelemetryReadings,
   ])
 
   useEffect(() => {
@@ -476,23 +658,33 @@ export function DashboardPage() {
     dateFilterPeriod,
   ])
 
-  const latestReading = deviceTelemetry[0] ?? null
-
   const selectedDeviceStatus = selectedDeviceId
     ? deviceStatuses[selectedDeviceId] ?? 'unknown'
     : 'unknown'
 
   const availableSensors = useMemo(() => {
-    const sensorSet = new Set<string>(['temperature', 'humidity'])
+    const sensorSet = new Set<string>()
+
+    for (const sensor of deviceSensors) {
+      sensorSet.add(sensor.sensorId)
+    }
 
     for (const reading of deviceTelemetry) {
-      for (const sensorKey of Object.keys(reading.sensors ?? {})) {
+      if (reading.sensorId) {
+        sensorSet.add(reading.sensorId)
+      }
+
+      for (const sensorKey of Object.keys(getReadingSensorValues(reading))) {
         sensorSet.add(sensorKey)
       }
     }
 
+    if (sensorSet.size === 0) {
+      sensorSet.add('temperature')
+    }
+
     return [...sensorSet]
-  }, [deviceTelemetry])
+  }, [deviceTelemetry, deviceSensors, getReadingSensorValues])
 
   const activeTriggerSensor = useMemo(() => {
     if (availableSensors.length === 0) {
@@ -506,24 +698,53 @@ export function DashboardPage() {
     return availableSensors[0]
   }, [availableSensors, selectedTriggerSensor])
 
-  const latestSensors = useMemo(() => {
-    const reading = latestDeviceReading ?? latestReading
+  const sensorCatalog = useMemo(() => {
+    const sensorSet = new Set<string>()
 
-    if (!reading) {
-      return null
+    for (const sensor of deviceSensors) {
+      sensorSet.add(sensor.sensorId)
     }
 
-    return {
-      temperature: reading.temperature,
-      humidity: reading.humidity,
-      ...(reading.sensors ?? {}),
-    } as Record<string, number>
-  }, [latestDeviceReading, latestReading])
+    for (const sensorKey of availableSensors) {
+      sensorSet.add(sensorKey)
+    }
+
+    return [...sensorSet].sort((left, right) => left.localeCompare(right))
+  }, [deviceSensors, availableSensors])
+
+  const latestSensors = useMemo(() => {
+    const latestBySensor: Record<string, number> = {}
+
+    if (dataMode === 'live' && selectedDeviceId) {
+      const snapshot = liveSensorSnapshots[selectedDeviceId]
+      if (snapshot) {
+        for (const [sensorKey, value] of Object.entries(snapshot)) {
+          latestBySensor[sensorKey] = value
+        }
+      }
+    }
+
+    const readings = latestDeviceReading
+      ? [latestDeviceReading, ...deviceTelemetry]
+      : deviceTelemetry
+
+    for (const reading of readings) {
+      const sensorValues = getReadingSensorValues(reading)
+
+      for (const [sensorKey, value] of Object.entries(sensorValues)) {
+        if (!(sensorKey in latestBySensor)) {
+          latestBySensor[sensorKey] = value
+        }
+      }
+    }
+
+    return Object.keys(latestBySensor).length > 0 ? latestBySensor : null
+  }, [dataMode, deviceTelemetry, latestDeviceReading, liveSensorSnapshots, selectedDeviceId, getReadingSensorValues])
 
   const triggerMapBySensor = useMemo(() => {
     const map: Record<string, TriggerListItem> = {}
     for (const trigger of deviceTriggers) {
-      map[trigger.sensor] = trigger
+      map[trigger.sensorId] = trigger
     }
 
     return map
@@ -532,6 +753,14 @@ export function DashboardPage() {
   useEffect(() => {
     selectedDeviceRef.current = selectedDeviceId
   }, [selectedDeviceId])
+
+  useEffect(() => {
+    deviceSensorIdsRef.current = new Set(
+      deviceSensors
+        .map((sensor) => sensor.sensorId.trim())
+        .filter((sensorId) => sensorId.length > 0),
+    )
+  }, [deviceSensors])
 
   useEffect(() => {
     triggerMapRef.current = triggerMapBySensor
@@ -558,6 +787,18 @@ export function DashboardPage() {
       return 'CO₂'
     }
 
+    if (sensorKey === 'dht11-temp') {
+      return 'DHT11 Temp'
+    }
+
+    if (sensorKey === 'dht11-humidity' || sensorKey === 'humidity_dht11') {
+      return 'DHT11 Humidity'
+    }
+
+    if (sensorKey === 'signal_strength') {
+      return 'Signal Strength'
+    }
+
     return sensorKey
       .split('_')
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -565,12 +806,16 @@ export function DashboardPage() {
   }
 
   const getSensorUnit = (sensorKey: string) => {
-    if (sensorKey === 'temperature') {
+    if (sensorKey === 'temperature' || sensorKey === 'dht11-temp') {
       return '°C'
     }
 
-    if (sensorKey === 'humidity') {
+    if (sensorKey === 'humidity' || sensorKey === 'humidity_dht11' || sensorKey === 'dht11-humidity') {
       return '%'
+    }
+
+    if (sensorKey === 'signal_strength') {
+      return 'dBm'
     }
 
     if (sensorKey === 'co2') {
@@ -668,7 +913,7 @@ export function DashboardPage() {
         }
 
         const sortedTriggers = [...response.triggers].sort((left, right) =>
-          left.sensor.localeCompare(right.sensor),
+          left.sensorId.localeCompare(right.sensorId),
         )
 
         setDeviceTriggers(sortedTriggers)
@@ -696,7 +941,7 @@ export function DashboardPage() {
   const refreshDeviceTriggers = async (deviceId: string) => {
     const response = await fetchTriggersByDeviceId(deviceId)
     const sortedTriggers = [...response.triggers].sort((left, right) =>
-      left.sensor.localeCompare(right.sensor),
+      left.sensorId.localeCompare(right.sensorId),
     )
     setDeviceTriggers(sortedTriggers)
   }
@@ -762,7 +1007,7 @@ export function DashboardPage() {
   }
 
   const handleEditTrigger = (trigger: TriggerListItem) => {
-    setSelectedTriggerSensor(trigger.sensor)
+    setSelectedTriggerSensor(trigger.sensorId)
     setMinThresholdInput(trigger.min !== undefined ? String(trigger.min) : '')
     setMaxThresholdInput(trigger.max !== undefined ? String(trigger.max) : '')
     setTargetTriggerDeviceId(trigger.targetDeviceId ?? selectedDeviceId)
@@ -770,20 +1015,20 @@ export function DashboardPage() {
     setTriggerMessage('Trigger loaded into form')
   }
 
-  const handleDeleteTrigger = async (sensor: string) => {
+  const handleDeleteTrigger = async (sensorId: string) => {
     if (!selectedDeviceId) {
       return
     }
 
-    setDeletingSensor(sensor)
+    setDeletingSensor(sensorId)
     setTriggerError('')
     setTriggerMessage('')
 
     try {
-      await deleteSensorTriggerByDeviceId(selectedDeviceId, sensor)
+      await deleteSensorTriggerByDeviceId(selectedDeviceId, sensorId)
       await refreshDeviceTriggers(selectedDeviceId)
 
-      if (activeTriggerSensor === sensor) {
+      if (activeTriggerSensor === sensorId) {
         setMinThresholdInput('')
         setMaxThresholdInput('')
       }
@@ -798,10 +1043,22 @@ export function DashboardPage() {
 
   const handleSelectDevice = (deviceId: string) => {
     setSelectedDeviceId(deviceId)
+    setSelectedTelemetrySensor('all')
+    setActiveTab('sensors')
     triggerActivationState.current = {}
     setActiveTriggerEvent(null)
     setTriggerEvents([])
     setToastTriggerEvent(null)
+  }
+
+  const handleOpenSensorTelemetry = (sensorId: string) => {
+    setSelectedTelemetrySensor(sensorId)
+    setActiveTab('telemetry')
+  }
+
+  const handleConfigureSensorTrigger = (sensorId: string) => {
+    setSelectedTriggerSensor(sensorId)
+    setActiveTab('triggers')
   }
 
   const formatEventTime = (timestamp: string) => {
@@ -877,9 +1134,20 @@ export function DashboardPage() {
         </div>
       </header>
 
-      <DeviceMetaPanel meta={latestDeviceReading?.meta} />
-
-      <DataModeSelector mode={dataMode} onChange={setDataMode} />
+      <nav className="dashboard-tabs" role="tablist" aria-label="Dashboard sections">
+        {dashboardTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={`dashboard-tab ${activeTab === tab.id ? 'dashboard-tab-active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
       {isLoading && (
         <p className="dashboard-message">Loading telemetry...</p>
@@ -891,229 +1159,337 @@ export function DashboardPage() {
         <p className="dashboard-message">No telemetry data available</p>
       )}
 
-      <section className="trigger-panel">
-        <h2 className="trigger-title">Sensor Trigger</h2>
-        <form className="trigger-form" onSubmit={handleSaveTrigger}>
-          <label className="trigger-field">
-            <span>Sensor</span>
-            <select
-              value={activeTriggerSensor}
-              onChange={(event) => setSelectedTriggerSensor(event.target.value)}
-              disabled={availableSensors.length === 0}
-            >
-              {availableSensors.length === 0 && (
-                <option value="temperature">Temperature</option>
-              )}
-              {availableSensors.map((sensorKey) => (
-                <option key={sensorKey} value={sensorKey}>
-                  {formatSensorLabel(sensorKey)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="trigger-field">
-            <span>Min</span>
-            <input
-              type="number"
-              step="0.1"
-              value={minThresholdInput}
-              onChange={(event) => setMinThresholdInput(event.target.value)}
-            />
-          </label>
-          <label className="trigger-field">
-            <span>Max</span>
-            <input
-              type="number"
-              step="0.1"
-              value={maxThresholdInput}
-              onChange={(event) => setMaxThresholdInput(event.target.value)}
-            />
-          </label>
-          <label className="trigger-field">
-            <span>Target Device</span>
-            <select
-              value={targetTriggerDeviceId || selectedDeviceId}
-              onChange={(event) => setTargetTriggerDeviceId(event.target.value)}
-              disabled={devices.length === 0}
-            >
-              {devices.map((deviceId) => (
-                <option key={deviceId} value={deviceId}>
-                  {deviceId}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="submit" disabled={isSavingTrigger || !selectedDeviceId}>
-            {isSavingTrigger ? 'Saving...' : 'Save Trigger'}
-          </button>
-        </form>
-        <div className="trigger-list">
-          <h3 className="trigger-list-title">Configured Triggers</h3>
-          {isLoadingTriggers && <p className="dashboard-message">Loading triggers...</p>}
-          {!isLoadingTriggers && deviceTriggers.length === 0 && (
-            <p className="dashboard-message">No triggers configured for this device</p>
-          )}
-          {!isLoadingTriggers && deviceTriggers.length > 0 && (
-            <table className="trigger-table">
-              <thead>
-                <tr>
-                  <th>Sensor</th>
-                  <th>Min</th>
-                  <th>Max</th>
-                  <th>Target Device</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deviceTriggers.map((trigger) => (
-                  <tr key={trigger.sensor}>
-                    <td>{formatSensorLabel(trigger.sensor)}</td>
-                    <td>{trigger.min !== undefined ? trigger.min : '-'}</td>
-                    <td>{trigger.max !== undefined ? trigger.max : '-'}</td>
-                    <td>{trigger.targetDeviceId ?? selectedDeviceId}</td>
-                    <td className="trigger-actions-cell">
-                      <button
-                        type="button"
-                        onClick={() => handleEditTrigger(trigger)}
-                        disabled={deletingSensor === trigger.sensor}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTrigger(trigger.sensor)}
-                        disabled={deletingSensor === trigger.sensor}
-                      >
-                        {deletingSensor === trigger.sensor ? 'Deleting...' : 'Delete'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-        {triggerMessage && <p className="dashboard-message">{triggerMessage}</p>}
-        {triggerError && <p className="dashboard-message">{triggerError}</p>}
-      </section>
 
-      <section className="trigger-events-panel">
-        <h2 className="trigger-title">Trigger Događaji</h2>
+      {activeTab === 'overview' && (
+        <section className="dashboard-tab-panel dashboard-overview-panel">
+          <div className="dashboard-split-grid">
+            <DeviceMetaPanel meta={latestDeviceReading?.meta} />
 
-        {activeTriggerEvent ? (
-          <div className="trigger-event-active">
-            <p className="trigger-event-text">{formatEventDescription(activeTriggerEvent)}</p>
-            <p className="trigger-event-meta">
-              Uređaj: {activeTriggerEvent.deviceId} · Vreme: {formatEventTime(activeTriggerEvent.timestamp)} · Status: Aktivacija poslata uređaju
-            </p>
+            <section className="dashboard-card dashboard-card-soft">
+              <p className="dashboard-card-eyebrow">Brzi pregled</p>
+              <h2 className="dashboard-card-title">Trenutni uređaj</h2>
+              <p className="dashboard-card-copy">
+                Pregled statusa uređaja, metapodataka i glavnih senzora na jednom mjestu.
+              </p>
+              <div className="dashboard-stat-row">
+                <div>
+                  <span className="dashboard-stat-label">Uređaj</span>
+                  <strong className="dashboard-stat-value">{selectedDeviceId || 'Nije izabran'}</strong>
+                </div>
+                <div>
+                  <span className="dashboard-stat-label">Senzori</span>
+                  <strong className="dashboard-stat-value">{availableSensors.length}</strong>
+                </div>
+                <div>
+                  <span className="dashboard-stat-label">Status</span>
+                  <strong className={`dashboard-stat-value device-status-value device-status-${selectedDeviceStatus}`}>
+                    {selectedDeviceStatus}
+                  </strong>
+                </div>
+              </div>
+            </section>
           </div>
-        ) : (
-          <p className="dashboard-message">Nema aktivnih trigger alarma</p>
-        )}
+        </section>
+      )}
 
-        <div className="trigger-event-history">
-          <h3 className="trigger-list-title">Poslednji događaji</h3>
-          {triggerEvents.length === 0 ? (
-            <p className="dashboard-message">Još nema trigger događaja</p>
-          ) : (
-            <ul className="trigger-event-list">
-              {triggerEvents.map((event) => (
-                <li key={event.id} className="trigger-event-item">
-                  <p className="trigger-event-text">{formatEventDescription(event)}</p>
-                  <p className="trigger-event-meta">
-                    Uređaj: {event.deviceId} · Vreme: {formatEventTime(event.timestamp)}
-                  </p>
-                </li>
-              ))}
-            </ul>
+      {activeTab === 'telemetry' && (
+        <section className="dashboard-tab-panel">
+          <DataModeSelector mode={dataMode} onChange={setDataMode} />
+
+          {selectedDeviceId && (
+            <section className="dashboard-card dashboard-card-soft telemetry-sensor-filter">
+              <label className="trigger-field">
+                <span>Filtriraj po sensorId</span>
+                <select
+                  value={selectedTelemetrySensor}
+                  onChange={(event) => setSelectedTelemetrySensor(event.target.value)}
+                >
+                  <option value="all">Svi senzori</option>
+                  {availableSensors.map((sensorKey) => (
+                    <option key={sensorKey} value={sensorKey}>
+                      {formatSensorLabel(sensorKey)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
           )}
-        </div>
-      </section>
 
-      <SensorVisibilitySelector
-        sensors={availableSensors}
-        selectedSensors={visibleSensors}
-        onToggleSensor={handleToggleSensor}
-      />
+          {selectedDeviceId && dataMode === 'history' && (
+            <DateFilter
+              onFilterChange={handleDateFilterChange}
+              selectedPeriod={dateFilterPeriod}
+            />
+          )}
 
-      <section className="sensor-grid">
-        {visibleSensors.map((sensorKey) => (
-          <SensorCard
-            key={sensorKey}
-            label={formatSensorLabel(sensorKey)}
-            value={latestSensors?.[sensorKey] ?? null}
-            unit={getSensorUnit(sensorKey)}
+          {dataMode === 'live' && (
+            <div className="dashboard-banner dashboard-banner-live">
+              📡 Prikazano: Poslednji sat podataka u realnom vremenu
+            </div>
+          )}
+
+          {dataMode === 'history' && deviceTelemetry.length > 0 && (() => {
+            const originalData = telemetry.filter(
+              (reading) => reading.deviceId === selectedDeviceId,
+            )
+            const isDownsampled =
+              originalData.length > 100 &&
+              deviceTelemetry.length < originalData.length
+
+            return isDownsampled ? (
+              <div className="dashboard-banner dashboard-banner-warning">
+                📊 Prikazano: {deviceTelemetry.length} od {originalData.length} podataka (optimizovano za performanse)
+              </div>
+            ) : null
+          })()}
+
+          <SensorVisibilitySelector
+            sensors={availableSensors}
+            selectedSensors={visibleSensors}
+            onToggleSensor={handleToggleSensor}
           />
-        ))}
-      </section>
 
-      {dataMode === 'history' && selectedDeviceId && (
-        <DateFilter
-          onFilterChange={handleDateFilterChange}
-          selectedPeriod={dateFilterPeriod}
-        />
+          <section className="sensor-grid">
+            {visibleSensors.map((sensorKey) => (
+              <SensorCard
+                key={sensorKey}
+                label={formatSensorLabel(sensorKey)}
+                value={latestSensors?.[sensorKey] ?? null}
+                unit={getSensorUnit(sensorKey)}
+              />
+            ))}
+          </section>
+
+          <div className="dashboard-chart-shell">
+            <Suspense
+              fallback={
+                <div className="dashboard-loading-chart">
+                  Loading chart...
+                </div>
+              }
+            >
+              <TelemetryLineChart
+                data={deviceTelemetry}
+                selectedSensors={visibleSensors}
+              />
+            </Suspense>
+          </div>
+        </section>
       )}
 
-      {dataMode === 'live' && (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '0.75rem',
-            backgroundColor: '#e7f3ff',
-            borderRadius: '6px',
-            margin: '1rem 0',
-            color: '#0066cc',
-            fontWeight: '500',
-          }}
-        >
-          📡 Prikazano: Poslednji sat podataka u realnom vremenu
-        </div>
+      {activeTab === 'sensors' && (
+        <section className="dashboard-tab-panel">
+          <section className="dashboard-card dashboard-card-soft">
+            <p className="dashboard-card-eyebrow">Senzori</p>
+            <h2 className="dashboard-card-title">Senzori po uređaju</h2>
+            <p className="dashboard-card-copy">
+              Izaberi senzor i otvori telemetriju filtriranu po sensorId ili odmah podesi trigger.
+            </p>
+          </section>
+
+          {!selectedDeviceId && (
+            <p className="dashboard-message">Prvo odaberi uređaj.</p>
+          )}
+
+          {selectedDeviceId && sensorCatalog.length === 0 && (
+            <p className="dashboard-message">Nema registrovanih senzora za ovaj uređaj.</p>
+          )}
+
+          {selectedDeviceId && sensorCatalog.length > 0 && (
+            <section className="dashboard-card">
+              <table className="trigger-table">
+                <thead>
+                  <tr>
+                    <th>Sensor ID</th>
+                    <th>Naziv</th>
+                    <th>Akcije</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sensorCatalog.map((sensorId) => (
+                    <tr key={sensorId}>
+                      <td>{sensorId}</td>
+                      <td>{formatSensorLabel(sensorId)}</td>
+                      <td className="trigger-actions-cell">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSensorTelemetry(sensorId)}
+                        >
+                          Telemetrija
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleConfigureSensorTrigger(sensorId)}
+                        >
+                          Trigger
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+        </section>
       )}
 
-      {dataMode === 'history' && deviceTelemetry.length > 0 && (() => {
-        const originalData = telemetry.filter(
-          (reading) => reading.deviceId === selectedDeviceId,
-        )
-        const isDownsampled =
-          originalData.length > 100 &&
-          deviceTelemetry.length < originalData.length
+      {activeTab === 'triggers' && (
+        <section className="dashboard-tab-panel">
+          <section className="trigger-panel dashboard-card">
+            <div className="trigger-panel-header">
+              <div>
+                <p className="dashboard-card-eyebrow">Automatika</p>
+                <h2 className="trigger-title">Sensor Trigger</h2>
+              </div>
+              <p className="dashboard-card-copy">
+                Dodaj pragove po senzoru i ciljnom uređaju.
+              </p>
+            </div>
 
-        return isDownsampled ? (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '0.75rem',
-              backgroundColor: '#fff3cd',
-              borderRadius: '6px',
-              margin: '1rem 0',
-              color: '#856404',
-              fontWeight: '500',
-            }}
-          >
-            📊 Prikazano: {deviceTelemetry.length} od {originalData.length}{' '}
-            podataka (optimizovano za performanse)
-          </div>
-        ) : null
-      })()}
+            <form className="trigger-form" onSubmit={handleSaveTrigger}>
+              <label className="trigger-field">
+                <span>Sensor</span>
+                <select
+                  value={activeTriggerSensor}
+                  onChange={(event) => setSelectedTriggerSensor(event.target.value)}
+                  disabled={availableSensors.length === 0}
+                >
+                  {availableSensors.length === 0 && (
+                    <option value="temperature">Temperature</option>
+                  )}
+                  {availableSensors.map((sensorKey) => (
+                    <option key={sensorKey} value={sensorKey}>
+                      {formatSensorLabel(sensorKey)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="trigger-field">
+                <span>Min</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={minThresholdInput}
+                  onChange={(event) => setMinThresholdInput(event.target.value)}
+                />
+              </label>
+              <label className="trigger-field">
+                <span>Max</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={maxThresholdInput}
+                  onChange={(event) => setMaxThresholdInput(event.target.value)}
+                />
+              </label>
+              <label className="trigger-field">
+                <span>Target Device</span>
+                <select
+                  value={targetTriggerDeviceId || selectedDeviceId}
+                  onChange={(event) => setTargetTriggerDeviceId(event.target.value)}
+                  disabled={devices.length === 0}
+                >
+                  {devices.map((deviceId) => (
+                    <option key={deviceId} value={deviceId}>
+                      {deviceId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="submit" disabled={isSavingTrigger || !selectedDeviceId}>
+                {isSavingTrigger ? 'Saving...' : 'Save Trigger'}
+              </button>
+            </form>
 
-      <Suspense
-        fallback={
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '2rem',
-              color: '#6c757d',
-            }}
-          >
-            Loading chart...
-          </div>
-        }
-      >
-        <TelemetryLineChart
-          data={deviceTelemetry}
-          selectedSensors={visibleSensors}
-        />
-      </Suspense>
+            <div className="trigger-list">
+              <h3 className="trigger-list-title">Configured Triggers</h3>
+              {isLoadingTriggers && <p className="dashboard-message">Loading triggers...</p>}
+              {!isLoadingTriggers && deviceTriggers.length === 0 && (
+                <p className="dashboard-message">No triggers configured for this device</p>
+              )}
+              {!isLoadingTriggers && deviceTriggers.length > 0 && (
+                <table className="trigger-table">
+                  <thead>
+                    <tr>
+                      <th>Sensor</th>
+                      <th>Min</th>
+                      <th>Max</th>
+                      <th>Target Device</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deviceTriggers.map((trigger) => (
+                      <tr key={trigger.sensorId}>
+                        <td>{formatSensorLabel(trigger.sensorId)}</td>
+                        <td>{trigger.min !== undefined ? trigger.min : '-'}</td>
+                        <td>{trigger.max !== undefined ? trigger.max : '-'}</td>
+                        <td>{trigger.targetDeviceId ?? selectedDeviceId}</td>
+                        <td className="trigger-actions-cell">
+                          <button
+                            type="button"
+                            onClick={() => handleEditTrigger(trigger)}
+                            disabled={deletingSensor === trigger.sensorId}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTrigger(trigger.sensorId)}
+                            disabled={deletingSensor === trigger.sensorId}
+                          >
+                            {deletingSensor === trigger.sensorId ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {triggerMessage && <p className="dashboard-message">{triggerMessage}</p>}
+            {triggerError && <p className="dashboard-message">{triggerError}</p>}
+          </section>
+
+          <section className="trigger-events-panel dashboard-card">
+            <div className="trigger-panel-header">
+              <div>
+                <p className="dashboard-card-eyebrow">Događaji</p>
+                <h2 className="trigger-title">Trigger Događaji</h2>
+              </div>
+            </div>
+
+            {activeTriggerEvent ? (
+              <div className="trigger-event-active">
+                <p className="trigger-event-text">{formatEventDescription(activeTriggerEvent)}</p>
+                <p className="trigger-event-meta">
+                  Uređaj: {activeTriggerEvent.deviceId} · Vreme: {formatEventTime(activeTriggerEvent.timestamp)} · Status: Aktivacija poslata uređaju
+                </p>
+              </div>
+            ) : (
+              <p className="dashboard-message">Nema aktivnih trigger alarma</p>
+            )}
+
+            <div className="trigger-event-history">
+              <h3 className="trigger-list-title">Poslednji događaji</h3>
+              {triggerEvents.length === 0 ? (
+                <p className="dashboard-message">Još nema trigger događaja</p>
+              ) : (
+                <ul className="trigger-event-list">
+                  {triggerEvents.map((event) => (
+                    <li key={event.id} className="trigger-event-item">
+                      <p className="trigger-event-text">{formatEventDescription(event)}</p>
+                      <p className="trigger-event-meta">
+                        Uređaj: {event.deviceId} · Vreme: {formatEventTime(event.timestamp)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        </section>
+      )}
     </main>
   )
 }

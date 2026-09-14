@@ -7,7 +7,7 @@ type SensorCardProps = {
 }
 
 export const SensorCard = memo(function SensorCard({ label, value, unit }: SensorCardProps) {
-  const displayValue = value === null ? '--' : `${value.toFixed(1)} ${unit}`
+  const displayValue = value == null ? '--' : `${value.toFixed(1)} ${unit}`
 
   return (
     <article className="sensor-card">

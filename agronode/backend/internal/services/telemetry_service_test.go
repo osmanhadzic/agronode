@@ -28,6 +28,16 @@ type deviceMetadataUpdaterStub struct {
 	err             error
 }
 
+type sensorRepositoryStub struct {
+	upserts []struct {
+		deviceID string
+		sensorID string
+	}
+	listResult []models.Sensor
+	listError  error
+	upsertError error
+}
+
 func (stub *devicePresenceUpdaterStub) UpdatePresence(_ context.Context, deviceID string, seenAt time.Time) error {
 	stub.updatedDeviceID = deviceID
 	stub.updatedSeenAt = seenAt
@@ -38,6 +48,22 @@ func (stub *deviceMetadataUpdaterStub) UpdateMetadataFromTelemetry(_ context.Con
 	stub.updatedDeviceID = deviceID
 	stub.updatedMeta = meta
 	return stub.err
+}
+
+func (stub *sensorRepositoryStub) Upsert(_ context.Context, deviceID, sensorID string) error {
+	if stub.upsertError != nil {
+		return stub.upsertError
+	}
+
+	stub.upserts = append(stub.upserts, struct {
+		deviceID string
+		sensorID string
+	}{deviceID: deviceID, sensorID: sensorID})
+	return nil
+}
+
+func (stub *sensorRepositoryStub) ListByDeviceID(_ context.Context, _ string) ([]models.Sensor, error) {
+	return stub.listResult, stub.listError
 }
 
 type triggerPublisherStub struct {
@@ -70,6 +96,10 @@ func (repository *telemetryRepositoryStub) ListByDeviceID(context.Context, strin
 	return nil, nil
 }
 
+func (repository *telemetryRepositoryStub) ListByDeviceIDAndSensorID(context.Context, string, string) ([]models.TelemetryReading, error) {
+	return nil, nil
+}
+
 func (repository *telemetryRepositoryStub) ListByDeviceIDWithDateRange(_ context.Context, _ string, _ repositories.DateRange) ([]models.TelemetryReading, error) {
 	return nil, nil
 }
@@ -86,6 +116,7 @@ func TestTelemetryService_ProcessTelemetry(t *testing.T) {
 		now := time.Now().UTC().Truncate(time.Second)
 		reading := models.TelemetryReading{
 			DeviceID:    "esp32-lab",
+			SensorID:    "dht11",
 			Temperature: 24.5,
 			Humidity:    60,
 			Sensors: map[string]float64{
@@ -132,6 +163,95 @@ func TestTelemetryService_ProcessTelemetry(t *testing.T) {
 			t.Fatalf("expected no saved readings, got %d", len(repository.saved))
 		}
 	})
+
+	t.Run("upserts sensor for explicit sensor id", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		sensorRepository := &sensorRepositoryStub{}
+		service := NewTelemetryService(repository, nil)
+		service.SetSensorRepository(sensorRepository)
+
+		err := service.ProcessTelemetry(context.Background(), models.TelemetryReading{
+			DeviceID:    "esp32-lab",
+			SensorID:    "dht11",
+			Temperature: 24.5,
+			Humidity:    60,
+			Sensors: map[string]float64{
+				"temperature": 24.5,
+				"humidity":    60,
+			},
+			CreatedAt: time.Now().UTC(),
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(sensorRepository.upserts) != 1 {
+			t.Fatalf("expected 1 sensor upsert, got %d", len(sensorRepository.upserts))
+		}
+
+		if sensorRepository.upserts[0].sensorID != "dht11" {
+			t.Fatalf("expected upsert sensor id %q, got %q", "dht11", sensorRepository.upserts[0].sensorID)
+		}
+	})
+
+	t.Run("upserts single discovered sensor when sensor id is missing", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		sensorRepository := &sensorRepositoryStub{}
+		service := NewTelemetryService(repository, nil)
+		service.SetSensorRepository(sensorRepository)
+
+		err := service.ProcessTelemetry(context.Background(), models.TelemetryReading{
+			DeviceID: "esp32-lab",
+			Sensors: map[string]float64{
+				"co2": 420,
+			},
+			CreatedAt: time.Now().UTC(),
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(sensorRepository.upserts) != 1 {
+			t.Fatalf("expected 1 sensor upsert, got %d", len(sensorRepository.upserts))
+		}
+
+		if sensorRepository.upserts[0].sensorID != "co2" {
+			t.Fatalf("expected upsert sensor id %q, got %q", "co2", sensorRepository.upserts[0].sensorID)
+		}
+	})
+
+	t.Run("returns error when sensor upsert fails", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		sensorRepository := &sensorRepositoryStub{upsertError: errors.New("upsert failed")}
+		service := NewTelemetryService(repository, nil)
+		service.SetSensorRepository(sensorRepository)
+
+		err := service.ProcessTelemetry(context.Background(), models.TelemetryReading{
+			DeviceID: "esp32-lab",
+			SensorID: "dht11",
+			Sensors: map[string]float64{
+				"temperature": 24.5,
+			},
+			CreatedAt: time.Now().UTC(),
+		})
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+
+		if len(repository.saved) != 0 {
+			t.Fatalf("expected no telemetry save on sensor upsert failure, got %d", len(repository.saved))
+		}
+	})
+}
+
+func TestTelemetryService_GetTelemetryByDeviceIDAndSensorID(t *testing.T) {
+	repository := &telemetryRepositoryStub{}
+	service := NewTelemetryService(repository, nil)
+
+	_, err := service.GetTelemetryByDeviceIDAndSensorID(context.Background(), "esp32-lab", "temperature")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 }
 
 func TestTelemetryService_HandleTelemetry_Presence(t *testing.T) {
@@ -143,6 +263,7 @@ func TestTelemetryService_HandleTelemetry_Presence(t *testing.T) {
 
 		envelope := mqtt.TelemetryEnvelope{
 			DeviceID:  "esp32-lab",
+			SensorID:  "dht11",
 			Timestamp: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC).Unix(),
 			Sensors: map[string]float64{
 				"temperature": 24.5,
@@ -172,6 +293,7 @@ func TestTelemetryService_HandleTelemetry_Presence(t *testing.T) {
 
 		envelope := mqtt.TelemetryEnvelope{
 			DeviceID: "esp32-lab",
+			SensorID: "temperature",
 			Sensors: map[string]float64{
 				"temperature": 23,
 			},
@@ -191,6 +313,7 @@ func TestTelemetryService_HandleTelemetry_Presence(t *testing.T) {
 
 		envelope := mqtt.TelemetryEnvelope{
 			DeviceID: "esp32-lab",
+			SensorID: "temperature",
 			Meta: &mqtt.DeviceMeta{
 				Firmware: "1.0.1",
 				IP:       "192.168.1.50",
@@ -228,6 +351,7 @@ func TestTelemetryService_HandleTelemetry_Presence(t *testing.T) {
 
 		envelope := mqtt.TelemetryEnvelope{
 			DeviceID: "esp32-lab",
+			SensorID: "temperature",
 			Sensors: map[string]float64{
 				"temperature":     23,
 				"signal_strength": -71,
@@ -263,6 +387,27 @@ func TestTelemetryService_SetSensorTrigger(t *testing.T) {
 
 		if !errors.Is(err, ErrValidation) {
 			t.Fatalf("expected ErrValidation, got %v", err)
+		}
+	})
+
+	t.Run("persists sensor entry when trigger is configured", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		sensorRepository := &sensorRepositoryStub{}
+		service := NewTelemetryService(repository, nil)
+		service.SetSensorRepository(sensorRepository)
+
+		maxValue := 50.0
+		err := service.SetSensorTrigger(context.Background(), "esp32-lab", "temperature", models.SensorTrigger{Max: &maxValue})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(sensorRepository.upserts) != 1 {
+			t.Fatalf("expected 1 sensor upsert, got %d", len(sensorRepository.upserts))
+		}
+
+		if sensorRepository.upserts[0].deviceID != "esp32-lab" || sensorRepository.upserts[0].sensorID != "temperature" {
+			t.Fatalf("unexpected sensor upsert: %#v", sensorRepository.upserts[0])
 		}
 	})
 
@@ -339,6 +484,7 @@ func TestTelemetryService_GenericTriggerActivation_TargetDevice(t *testing.T) {
 	now := time.Now().UTC()
 	firstReading := models.TelemetryReading{
 		DeviceID: "esp32-lab",
+		SensorID: "co2",
 		Sensors: map[string]float64{
 			"co2": 800,
 		},
@@ -369,6 +515,7 @@ func TestTelemetryService_HandleTelemetry_Discovery(t *testing.T) {
 
 		envelope := mqtt.TelemetryEnvelope{
 			DeviceID: "esp32-lab",
+			SensorID: "temperature",
 			Sensors: map[string]float64{
 				"temperature":   24.5,
 				"humidity":      61,
@@ -407,6 +554,7 @@ func TestTelemetryService_GenericTriggerActivation(t *testing.T) {
 	now := time.Now().UTC()
 	firstReading := models.TelemetryReading{
 		DeviceID: "esp32-lab",
+		SensorID: "co2",
 		Sensors: map[string]float64{
 			"co2":         800,
 			"temperature": 24,
@@ -429,6 +577,7 @@ func TestTelemetryService_GenericTriggerActivation(t *testing.T) {
 
 	secondReading := models.TelemetryReading{
 		DeviceID: "esp32-lab",
+		SensorID: "co2",
 		Sensors: map[string]float64{
 			"co2":         810,
 			"temperature": 24,

@@ -16,7 +16,6 @@ type Config struct {
 	FrontendLoginPassword       string
 	FrontendOrganizationID      uint
 	FrontendSessionTTL          time.Duration
-	SeedDemoData                bool
 	DBHost                      string
 	DBPort                      string
 	DBUser                      string
@@ -38,7 +37,6 @@ func Load() Config {
 		FrontendLoginPassword:       getEnv("FRONTEND_LOGIN_PASSWORD", "admin123"),
 		FrontendOrganizationID:      getEnvUint("FRONTEND_ORGANIZATION_ID", 1),
 		FrontendSessionTTL:          getEnvDurationHours("FRONTEND_SESSION_TTL_HOURS", 24),
-		SeedDemoData:                getEnvBool("SEED_DEMO_DATA", true),
 		DBHost:                      getEnv("DB_HOST", "postgres"),
 		DBPort:                      getEnv("DB_PORT", "5432"),
 		DBUser:                      getEnv("DB_USER", "postgres"),
@@ -103,18 +101,4 @@ func getEnvDurationHours(key string, fallbackHours int) time.Duration {
 	}
 
 	return time.Duration(parsed) * time.Hour
-}
-
-func getEnvBool(key string, fallback bool) bool {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		return fallback
-	}
-
-	return parsed
 }

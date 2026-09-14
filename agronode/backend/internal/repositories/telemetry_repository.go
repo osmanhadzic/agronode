@@ -19,6 +19,7 @@ type TelemetryRepository interface {
 	Save(context context.Context, reading models.TelemetryReading) error
 	List(context context.Context) ([]models.TelemetryReading, error)
 	ListByDeviceID(context context.Context, deviceID string) ([]models.TelemetryReading, error)
+	ListByDeviceIDAndSensorID(context context.Context, deviceID, sensorID string) ([]models.TelemetryReading, error)
 	ListByDeviceIDWithDateRange(context context.Context, deviceID string, dateRange DateRange) ([]models.TelemetryReading, error)
 	GetLatestByDeviceID(context context.Context, deviceID string) (models.TelemetryReading, error)
 }

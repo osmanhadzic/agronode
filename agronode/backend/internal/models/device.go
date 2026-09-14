@@ -19,6 +19,7 @@ type Device struct {
 	ZoneID                *uint             `gorm:"column:zone_id" json:"zoneId,omitempty"`
 	Status                string            `gorm:"not null;default:'unknown'" json:"status" binding:"omitempty,oneof=unknown online offline"`
 	FirmwareVersion       string            `gorm:"column:firmware_version" json:"firmwareVersion,omitempty"`
+	Sensors               []Sensor          `gorm:"foreignKey:DeviceID;references:DeviceID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"sensors,omitempty"`
 	Metadata              DeviceMetadata    `gorm:"column:metadata;type:jsonb;serializer:json" json:"metadata,omitempty"`
 	Tags                  []string          `gorm:"column:tags;type:jsonb;serializer:json" json:"tags,omitempty"`
 	DesiredState          DeviceShadowState `gorm:"column:desired_state;type:jsonb;serializer:json" json:"desiredState,omitempty"`
