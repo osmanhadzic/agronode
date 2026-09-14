@@ -1,15 +1,21 @@
 import type { DeviceStatusEvent, TelemetryReading } from '../types/telemetry'
 
+import { getSessionToken } from './session'
+
 function resolveWebSocketUrl(path: string): string {
   const explicitApiBase = import.meta.env.VITE_API_BASE_URL
+  const baseUrl = explicitApiBase
+    ? explicitApiBase.replace(/^http/, 'ws')
+    : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8080`
 
-  if (explicitApiBase) {
-    const normalized = explicitApiBase.replace(/^http/, 'ws')
-    return `${normalized}${path}`
+  const url = new URL(path, baseUrl)
+  const token = getSessionToken()
+
+  if (token) {
+    url.searchParams.set('token', token)
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${protocol}://${window.location.hostname}:8080${path}`
+  return url.toString()
 }
 
 function createSocket<T>(

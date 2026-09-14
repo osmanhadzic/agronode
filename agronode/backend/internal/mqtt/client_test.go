@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"agronode/backend/internal/models"
+	"agronode/backend/internal/tenancy"
 )
 
 type testMessage struct {
@@ -54,10 +55,13 @@ type deviceRegistrarStub struct {
 	registerCalls int
 	deviceID      string
 	firmware      string
+	metadata      models.DeviceMetadata
+	tags          []string
+	organization  uint
 	err           error
 }
 
-func (stub *deviceRegistrarStub) RegisterDevice(_ context.Context, deviceID string, firmwareVersion string, _ models.DeviceMetadata, _ string, _ string, _ []string) (*models.Device, error) {
+func (stub *deviceRegistrarStub) RegisterDevice(ctx context.Context, deviceID string, firmwareVersion string, metadata models.DeviceMetadata, _ string, _ string, tags []string) (*models.Device, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -65,6 +69,11 @@ func (stub *deviceRegistrarStub) RegisterDevice(_ context.Context, deviceID stri
 	stub.registerCalls++
 	stub.deviceID = deviceID
 	stub.firmware = firmwareVersion
+	stub.metadata = metadata
+	stub.tags = append([]string{}, tags...)
+	if organizationID, ok := tenancy.OrganizationIDFromContext(ctx); ok {
+		stub.organization = organizationID
+	}
 	return &models.Device{DeviceID: deviceID, FirmwareVersion: firmwareVersion}, nil
 }
 
@@ -116,6 +125,25 @@ func TestParseRegistrationPayload(t *testing.T) {
 
 		if payload.FirmwareVersion != "1.0.1" {
 			t.Fatalf("expected firmware %q, got %q", "1.0.1", payload.FirmwareVersion)
+		}
+	})
+
+	t.Run("parses metadata and tags", func(t *testing.T) {
+		payload, err := parseRegistrationPayload([]byte(`{"deviceId":"Plastenik-1","firmware":"1.0.1","metadata":{"signalStrength":-60,"hardware":{"model":"ESP32"}},"tags":["live","esp32"]}`))
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if payload.Metadata.SignalStrength == nil || *payload.Metadata.SignalStrength != -60 {
+			t.Fatalf("expected signalStrength -60, got %#v", payload.Metadata.SignalStrength)
+		}
+
+		if payload.Metadata.Hardware["model"] != "ESP32" {
+			t.Fatalf("expected hardware model ESP32, got %q", payload.Metadata.Hardware["model"])
+		}
+
+		if len(payload.Tags) != 2 || payload.Tags[0] != "live" || payload.Tags[1] != "esp32" {
+			t.Fatalf("expected tags [live esp32], got %v", payload.Tags)
 		}
 	})
 
@@ -171,6 +199,36 @@ func TestHandleMessage_RegisterTopic(t *testing.T) {
 
 		if consumer.handled != 0 {
 			t.Fatalf("expected telemetry handler not to be called, got %d", consumer.handled)
+		}
+	})
+
+	t.Run("passes default organization context and metadata", func(t *testing.T) {
+		consumer := &telemetryConsumerStub{}
+		registrar := &deviceRegistrarStub{}
+		client := &Client{logger: testLogger(), consumer: consumer, registrar: registrar}
+		client.SetDefaultOrganizationID(1)
+
+		message := testMessage{
+			topic:   "agronode/Plastenik-1/register",
+			payload: []byte(`{"firmware":"1.0.1","metadata":{"signalStrength":-64},"tags":["live"]}`),
+		}
+
+		client.handleMessage(nil, message)
+
+		if registrar.registerCalls != 1 {
+			t.Fatalf("expected 1 register call, got %d", registrar.registerCalls)
+		}
+
+		if registrar.organization != 1 {
+			t.Fatalf("expected organization id 1, got %d", registrar.organization)
+		}
+
+		if registrar.metadata.SignalStrength == nil || *registrar.metadata.SignalStrength != -64 {
+			t.Fatalf("expected metadata signalStrength -64, got %#v", registrar.metadata.SignalStrength)
+		}
+
+		if len(registrar.tags) != 1 || registrar.tags[0] != "live" {
+			t.Fatalf("expected tags [live], got %v", registrar.tags)
 		}
 	})
 }

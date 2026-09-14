@@ -8,6 +8,7 @@ import (
 
 	"agronode/backend/internal/models"
 	"agronode/backend/internal/repositories"
+	"agronode/backend/internal/tenancy"
 )
 
 type deviceRepositoryStub struct {
@@ -17,6 +18,7 @@ type deviceRepositoryStub struct {
 
 	getByDeviceIDResult *models.Device
 	getByDeviceIDError  error
+	getByDeviceIDFunc   func(ctx context.Context, deviceID string) (*models.Device, error)
 
 	updateInput *models.Device
 	updateError error
@@ -47,7 +49,11 @@ func (repository *deviceRepositoryStub) Create(_ context.Context, device *models
 	return nil
 }
 
-func (repository *deviceRepositoryStub) GetByDeviceID(context.Context, string) (*models.Device, error) {
+func (repository *deviceRepositoryStub) GetByDeviceID(ctx context.Context, deviceID string) (*models.Device, error) {
+	if repository.getByDeviceIDFunc != nil {
+		return repository.getByDeviceIDFunc(ctx, deviceID)
+	}
+
 	if repository.getByDeviceIDError != nil {
 		return nil, repository.getByDeviceIDError
 	}
@@ -446,6 +452,150 @@ func TestDeviceService_UpdateDiscoveredSensors(t *testing.T) {
 
 		if repository.updateInput != nil {
 			t.Fatal("expected no update for empty sensor list")
+		}
+	})
+}
+
+func TestDeviceService_UpdateMetadataFromTelemetry(t *testing.T) {
+	t.Run("merges telemetry meta into device metadata", func(t *testing.T) {
+		repository := &deviceRepositoryStub{
+			getByDeviceIDResult: &models.Device{
+				DeviceID: "esp32-lab",
+				Metadata: models.DeviceMetadata{
+					Hardware: map[string]string{"model": "ESP32"},
+				},
+			},
+		}
+		service := NewDeviceService(repository, nil)
+
+		err := service.UpdateMetadataFromTelemetry(context.Background(), "esp32-lab", &models.DeviceMeta{
+			Firmware: "1.0.1",
+			IP:       "192.168.1.10",
+			RSSI:     -67,
+			Uptime:   456,
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if repository.updateInput == nil {
+			t.Fatal("expected repository.Update to be called")
+		}
+
+		if repository.updateInput.FirmwareVersion != "1.0.1" {
+			t.Fatalf("expected firmware version %q, got %q", "1.0.1", repository.updateInput.FirmwareVersion)
+		}
+
+		if repository.updateInput.Metadata.SignalStrength == nil || *repository.updateInput.Metadata.SignalStrength != -67 {
+			t.Fatalf("expected signal strength -67, got %#v", repository.updateInput.Metadata.SignalStrength)
+		}
+
+		if repository.updateInput.Metadata.Hardware["ip"] != "192.168.1.10" {
+			t.Fatalf("expected hardware ip %q, got %q", "192.168.1.10", repository.updateInput.Metadata.Hardware["ip"])
+		}
+
+		if repository.updateInput.Metadata.Hardware["uptimeSeconds"] != "456" {
+			t.Fatalf("expected uptimeSeconds %q, got %q", "456", repository.updateInput.Metadata.Hardware["uptimeSeconds"])
+		}
+	})
+
+	t.Run("skips update when meta is nil", func(t *testing.T) {
+		repository := &deviceRepositoryStub{}
+		service := NewDeviceService(repository, nil)
+
+		err := service.UpdateMetadataFromTelemetry(context.Background(), "esp32-lab", nil)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if repository.updateInput != nil {
+			t.Fatal("expected no repository update call")
+		}
+	})
+}
+
+func TestDeviceService_RegisterDevice_OrganizationAdoption(t *testing.T) {
+	t.Run("adopts existing global device into organization scope", func(t *testing.T) {
+		organizationID := uint(1)
+		existingGlobalDevice := &models.Device{DeviceID: "pump-node-1", OrganizationID: nil}
+
+		repository := &deviceRepositoryStub{
+			getByDeviceIDFunc: func(ctx context.Context, deviceID string) (*models.Device, error) {
+				if deviceID != "pump-node-1" {
+					return nil, repositories.ErrDeviceNotFound
+				}
+
+				if _, hasOrganization := tenancy.OrganizationIDFromContext(ctx); hasOrganization {
+					return nil, repositories.ErrDeviceNotFound
+				}
+
+				return existingGlobalDevice, nil
+			},
+		}
+
+		service := NewDeviceService(repository, nil)
+		ctx := tenancy.WithOrganizationID(context.Background(), organizationID)
+
+		device, err := service.RegisterDevice(ctx, "pump-node-1", "", models.DeviceMetadata{}, "", "", nil)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if repository.updateInput == nil {
+			t.Fatal("expected update call to adopt global device")
+		}
+
+		if repository.updateInput.OrganizationID == nil || *repository.updateInput.OrganizationID != organizationID {
+			t.Fatalf("expected organization adoption to %d, got %#v", organizationID, repository.updateInput.OrganizationID)
+		}
+
+		if device == nil || device.OrganizationID == nil || *device.OrganizationID != organizationID {
+			t.Fatalf("expected returned device organization id %d, got %#v", organizationID, device)
+		}
+
+		if len(repository.created) != 0 {
+			t.Fatalf("expected no create call, got %d", len(repository.created))
+		}
+	})
+}
+
+func TestDeviceService_RegisterDevice_RefreshesExistingMetadataAndTags(t *testing.T) {
+	t.Run("updates metadata and tags even when firmware is unchanged", func(t *testing.T) {
+		signalStrength := -62.0
+		repository := &deviceRepositoryStub{
+			getByDeviceIDResult: &models.Device{
+				DeviceID:        "esp32-lab",
+				FirmwareVersion: "1.0.1",
+				Metadata: models.DeviceMetadata{
+					Hardware: map[string]string{"model": "ESP32"},
+				},
+				Tags: []string{"old"},
+			},
+		}
+
+		service := NewDeviceService(repository, nil)
+		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "1.0.1", models.DeviceMetadata{
+			SignalStrength: &signalStrength,
+			Hardware:       map[string]string{"model": "ESP32", "source": "register"},
+		}, "", "", []string{"live", "esp32"})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if repository.updateInput == nil {
+			t.Fatal("expected update call for metadata/tags refresh")
+		}
+
+		if repository.updateInput.Metadata.SignalStrength == nil || *repository.updateInput.Metadata.SignalStrength != signalStrength {
+			t.Fatalf("expected refreshed signal strength %v, got %#v", signalStrength, repository.updateInput.Metadata.SignalStrength)
+		}
+
+		if len(repository.updateInput.Tags) != 2 || repository.updateInput.Tags[0] != "esp32" || repository.updateInput.Tags[1] != "live" {
+			t.Fatalf("expected normalized refreshed tags [esp32 live], got %v", repository.updateInput.Tags)
+		}
+
+		if device == nil {
+			t.Fatal("expected returned device")
 		}
 	})
 }

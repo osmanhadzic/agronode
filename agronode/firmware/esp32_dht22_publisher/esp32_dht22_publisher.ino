@@ -13,7 +13,7 @@ const char* WIFI_PASSWORD = "techno123";
 const char* MQTT_HOST = "192.168.193.106";
 const uint16_t MQTT_PORT = 1883;
 
-const char* DEVICE_ID = "Plastenik-1";
+const char* DEVICE_ID_BASE = "Plastenik";
 const char* FIRMWARE_VERSION = "1.0.1";
 const unsigned long PUBLISH_INTERVAL_MS = 5000;
 const unsigned long ACTIVATION_SIGNAL_DURATION_MS = 5000;
@@ -30,6 +30,13 @@ unsigned long lastPublishMs = 0;
 unsigned long activationSignalUntilMs = 0;
 char topicBuffer[128];
 char activationTopicBuffer[128];
+char deviceIdBuffer[64];
+
+void buildRuntimeDeviceId() {
+  uint64_t chipId = ESP.getEfuseMac();
+  uint32_t suffix = (uint32_t)(chipId & 0xFFFFFF);
+  snprintf(deviceIdBuffer, sizeof(deviceIdBuffer), "%s-%06lX", DEVICE_ID_BASE, (unsigned long)suffix);
+}
 
 void handleActivationPayload(const String& payload);
 void onMqttMessage(char* topic, byte* payload, unsigned int length);
@@ -39,6 +46,10 @@ bool payloadHasBooleanField(const String& payload, const char* fieldName, bool e
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  buildRuntimeDeviceId();
+  Serial.print("Runtime DEVICE_ID: ");
+  Serial.println(deviceIdBuffer);
 
   dht.begin();
   pinMode(ACTIVATION_PIN, OUTPUT);
@@ -58,14 +69,19 @@ void registerDevice() {
     ensureMqttConnected();
   }
 
-  char payload[256];
+  char payload[512];
+  int rssi = (int)WiFi.RSSI();
   snprintf(payload, sizeof(payload),
-    "{\"deviceId\":\"%s\",\"firmware\":\"%s\"}",
-    DEVICE_ID,
-    FIRMWARE_VERSION
+    "{\"deviceId\":\"%s\",\"firmware\":\"%s\","
+    "\"metadata\":{\"signalStrength\":%d,\"hardware\":{\"model\":\"ESP32\",\"source\":\"firmware-register\",\"ip\":\"%s\"}},"
+    "\"tags\":[\"live\",\"esp32\",\"plastenik\"]}",
+    deviceIdBuffer,
+    FIRMWARE_VERSION,
+    rssi,
+    WiFi.localIP().toString().c_str()
   );
 
-  snprintf(activationTopicBuffer, sizeof(activationTopicBuffer), "agronode/%s/register", DEVICE_ID);
+  snprintf(activationTopicBuffer, sizeof(activationTopicBuffer), "agronode/%s/register", deviceIdBuffer);
 
   mqttClient.loop();
   bool ok = mqttClient.publish(activationTopicBuffer, payload);
@@ -101,10 +117,10 @@ void ensureMqttConnected() {
 
   Serial.print("Connecting MQTT");
   while (!mqttClient.connected()) {
-    if (mqttClient.connect(DEVICE_ID)) {
+    if (mqttClient.connect(deviceIdBuffer)) {
       Serial.println(" connected");
 
-      snprintf(activationTopicBuffer, sizeof(activationTopicBuffer), "agronode/%s/activation", DEVICE_ID);
+      snprintf(activationTopicBuffer, sizeof(activationTopicBuffer), "agronode/%s/activation", deviceIdBuffer);
       bool subscribed = mqttClient.subscribe(activationTopicBuffer);
       Serial.print("Subscribe activation topic: ");
       Serial.print(activationTopicBuffer);
@@ -141,7 +157,7 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
 }
 
 void handleActivationPayload(const String& payload) {
-  if (!payloadHasDeviceId(payload, DEVICE_ID)) {
+  if (!payloadHasDeviceId(payload, deviceIdBuffer)) {
     Serial.println("Activation payload ignored: deviceId mismatch");
     return;
   }
@@ -195,21 +211,24 @@ bool payloadHasBooleanField(const String& payload, const char* fieldName, bool e
 }
 
 bool publishTelemetry(float temperature, float humidity, unsigned long epochSeconds) {
-  char payload[384];
+  char payload[448];
+  int rssi = (int)WiFi.RSSI();
+  unsigned long uptimeSeconds = millis() / 1000UL;
   int length = snprintf(
     payload,
     sizeof(payload),
     "{\"deviceId\":\"%s\",\"timestamp\":%lu,\"version\":1,"
     "\"meta\":{\"fw\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"uptime\":%lu},"
-    "\"sensors\":{\"temperature\":%.2f,\"humidity\":%.2f}}",
-    DEVICE_ID,
+    "\"sensors\":{\"temperature\":%.2f,\"humidity\":%.2f,\"signal_strength\":%d}}",
+    deviceIdBuffer,
     epochSeconds,
     FIRMWARE_VERSION,
     WiFi.localIP().toString().c_str(),
-    (int)WiFi.RSSI(),
-    millis() / 1000UL,
+    rssi,
+    uptimeSeconds,
     temperature,
-    humidity
+    humidity,
+    rssi
   );
 
   if (length <= 0 || length >= (int)sizeof(payload)) {
@@ -217,7 +236,7 @@ bool publishTelemetry(float temperature, float humidity, unsigned long epochSeco
     return false;
   }
 
-  snprintf(topicBuffer, sizeof(topicBuffer), "agronode/%s/telemetry", DEVICE_ID);
+  snprintf(topicBuffer, sizeof(topicBuffer), "agronode/%s/telemetry", deviceIdBuffer);
 
   Serial.print("Topic: ");
   Serial.println(topicBuffer);

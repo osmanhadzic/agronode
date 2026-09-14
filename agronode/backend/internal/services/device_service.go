@@ -6,12 +6,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"strconv"
 	"sort"
 	"strings"
 	"time"
 
 	"agronode/backend/internal/models"
 	"agronode/backend/internal/repositories"
+	"agronode/backend/internal/tenancy"
 )
 
 var ErrDeviceValidation = errors.New("device validation failed")
@@ -78,28 +80,60 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 	normalizedFirmware := strings.TrimSpace(firmwareVersion)
 
 	existingDevice, err := service.repository.GetByDeviceID(ctx, deviceID)
+	if errors.Is(err, repositories.ErrDeviceNotFound) {
+		if organizationID, hasOrganizationID := tenancy.OrganizationIDFromContext(ctx); hasOrganizationID {
+			globalDevice, globalErr := service.repository.GetByDeviceID(context.Background(), deviceID)
+			if globalErr == nil && globalDevice != nil {
+				if globalDevice.OrganizationID == nil || *globalDevice.OrganizationID == 0 {
+					globalDevice.OrganizationID = &organizationID
+					if updateErr := service.repository.Update(context.Background(), globalDevice); updateErr != nil {
+						return nil, updateErr
+					}
+				}
+				existingDevice = globalDevice
+				err = nil
+			} else if globalErr != nil && !errors.Is(globalErr, repositories.ErrDeviceNotFound) {
+				return nil, globalErr
+			}
+		}
+	}
 	if err != nil && !errors.Is(err, repositories.ErrDeviceNotFound) {
 		return nil, err
 	}
 
 	if err == nil && existingDevice != nil {
+		shouldUpdate := false
+
 		if tags != nil {
 			existingDevice.Tags = normalizedTags
+			shouldUpdate = true
+		}
+
+		if !isDeviceMetadataEmpty(metadata) {
+			existingDevice.Metadata = metadata
+			shouldUpdate = true
 		}
 
 		previousFirmware := existingDevice.FirmwareVersion
 		if normalizedFirmware != "" && normalizedFirmware != previousFirmware {
 			existingDevice.FirmwareVersion = normalizedFirmware
+			shouldUpdate = true
+		}
+
+		if shouldUpdate {
 			if updateErr := service.repository.Update(ctx, existingDevice); updateErr != nil {
 				return nil, updateErr
 			}
 
-			service.logAudit(
-				"device.firmware_updated",
-				"deviceId", deviceID,
-				"oldFirmwareVersion", previousFirmware,
-				"newFirmwareVersion", normalizedFirmware,
-			)
+			if normalizedFirmware != "" && normalizedFirmware != previousFirmware {
+				service.logAudit(
+					"device.firmware_updated",
+					"deviceId", deviceID,
+					"oldFirmwareVersion", previousFirmware,
+					"newFirmwareVersion", normalizedFirmware,
+				)
+			}
+
 		}
 
 		service.logAudit(
@@ -125,6 +159,10 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 		ProvisioningTokenHash: hashDeviceSecret(provisioningToken),
 		CreatedAt:             time.Now(),
 		UpdatedAt:             time.Now(),
+	}
+
+	if organizationID, ok := tenancy.OrganizationIDFromContext(ctx); ok {
+		device.OrganizationID = &organizationID
 	}
 
 	if err := service.repository.Create(ctx, device); err != nil {
@@ -310,6 +348,64 @@ func (service *DeviceService) UpdateDiscoveredSensors(ctx context.Context, devic
 	return service.repository.Update(ctx, device)
 }
 
+// UpdateMetadataFromTelemetry merges telemetry meta fields into device metadata.
+func (service *DeviceService) UpdateMetadataFromTelemetry(ctx context.Context, deviceID string, meta *models.DeviceMeta) error {
+	if err := validateDeviceID(deviceID); err != nil {
+		return err
+	}
+
+	if meta == nil {
+		return nil
+	}
+
+	device, err := service.repository.GetByDeviceID(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+
+	changed := false
+
+	firmware := strings.TrimSpace(meta.Firmware)
+	if firmware != "" && firmware != strings.TrimSpace(device.FirmwareVersion) {
+		device.FirmwareVersion = firmware
+		changed = true
+	}
+
+	signalStrength := float64(meta.RSSI)
+	if device.Metadata.SignalStrength == nil || *device.Metadata.SignalStrength != signalStrength {
+		device.Metadata.SignalStrength = &signalStrength
+		changed = true
+	}
+
+	if device.Metadata.Hardware == nil {
+		device.Metadata.Hardware = map[string]string{}
+	}
+
+	ipAddress := strings.TrimSpace(meta.IP)
+	if ipAddress != "" && device.Metadata.Hardware["ip"] != ipAddress {
+		device.Metadata.Hardware["ip"] = ipAddress
+		changed = true
+	}
+
+	if meta.Uptime > 0 {
+		uptimeSeconds := strconv.FormatUint(meta.Uptime, 10)
+		if device.Metadata.Hardware["uptimeSeconds"] != uptimeSeconds {
+			device.Metadata.Hardware["uptimeSeconds"] = uptimeSeconds
+			changed = true
+		}
+	}
+
+	if !changed {
+		return nil
+	}
+
+	if err := validateDeviceMetadata(device.Metadata); err != nil {
+		return err
+	}
+
+	return service.repository.Update(ctx, device)
+}
+
 // validateDeviceID validates device ID format
 func validateDeviceID(deviceID string) error {
 	deviceID = strings.TrimSpace(deviceID)
@@ -372,6 +468,10 @@ func normalizeSensorNames(sensorNames []string) []string {
 
 	sort.Strings(normalized)
 	return normalized
+}
+
+func isDeviceMetadataEmpty(metadata models.DeviceMetadata) bool {
+	return metadata.Battery == nil && metadata.SignalStrength == nil && len(metadata.Hardware) == 0
 }
 
 func normalizeDeviceListParams(params DeviceListParams) (DeviceListParams, error) {
