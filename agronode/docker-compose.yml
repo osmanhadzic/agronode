@@ -1,19 +1,31 @@
 services:
-  mosquitto:
-    image: eclipse-mosquitto:2
-    container_name: agronode-mosquitto
+  emqx:
+    image: emqx/emqx:latest
+    container_name: agronode-emqx
+    restart: unless-stopped
+    environment:
+      # EMQX Dashboard
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USERNAME:-admin}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-public}
     ports:
+      # MQTT
       - "1883:1883"
+
+      # MQTT over WebSocket
+      - "8083:8083"
+
+      # EMQX Dashboard
+      - "18083:18083"
     volumes:
-      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - mosquitto-data:/mosquitto/data
-      - mosquitto-log:/mosquitto/log
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
     networks:
       - agronode-net
 
   postgres:
     image: postgres:16-alpine
     container_name: agronode-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
@@ -31,26 +43,32 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: agronode-backend
+    restart: unless-stopped
     environment:
       APP_PORT: ${BACKEND_PORT:-8080}
+
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret}
+
       FRONTEND_LOGIN_EMAIL: ${FRONTEND_LOGIN_EMAIL:-admin@agronode.local}
       FRONTEND_LOGIN_PASSWORD: ${FRONTEND_LOGIN_PASSWORD:-admin123}
       FRONTEND_ORGANIZATION_ID: ${FRONTEND_ORGANIZATION_ID:-1}
       FRONTEND_SESSION_TTL_HOURS: ${FRONTEND_SESSION_TTL_HOURS:-24}
-      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-agronode}
-      MQTT_BROKER: ${MQTT_BROKER:-tcp://mosquitto:1883}
+
+      # EMQX
+      MQTT_BROKER: ${MQTT_BROKER:-tcp://emqx:1883}
       MQTT_TOPIC: ${MQTT_TOPIC:-agronode/#}
       MQTT_ACTIVATION_TOPIC_TEMPLATE: ${MQTT_ACTIVATION_TOPIC_TEMPLATE:-agronode/%s/activation}
+
     ports:
       - "8080:8080"
     depends_on:
-      - mosquitto
+      - emqx
       - postgres
     networks:
       - agronode-net
@@ -61,6 +79,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: agronode-frontend
+    restart: unless-stopped
     ports:
       - "5173:5173"
     depends_on:
@@ -71,17 +90,27 @@ services:
   demo-device:
     image: eclipse-mosquitto:2
     container_name: agronode-demo-device
-    profiles: ["demo"]
+    profiles:
+      - demo
     environment:
       DEVICE_ID: ${DEMO_DEVICE_ID:-demo-device-1}
       PUBLISH_INTERVAL_SECONDS: ${DEMO_PUBLISH_INTERVAL_SECONDS:-15}
-      MQTT_HOST: ${DEMO_MQTT_HOST:-mosquitto}
+
+      # IMPORTANT:
+      # demo device now connects to EMQX
+      MQTT_HOST: ${DEMO_MQTT_HOST:-emqx}
       MQTT_PORT: ${DEMO_MQTT_PORT:-1883}
+
     volumes:
       - ./infra/demo-device/publisher.sh:/demo/publisher.sh:ro
-    command: ["sh", "/demo/publisher.sh"]
+
+    command:
+      - sh
+      - /demo/publisher.sh
+
     depends_on:
-      - mosquitto
+      - emqx
+
     networks:
       - agronode-net
 
@@ -91,5 +120,5 @@ networks:
 
 volumes:
   postgres-data:
-  mosquitto-data:
-  mosquitto-log:
+  emqx-data:
+  emqx-log:

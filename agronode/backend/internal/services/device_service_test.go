@@ -38,10 +38,31 @@ type deviceSensorDiscoveryUpdaterStub struct {
 	err             error
 }
 
+type deviceSensorRepositoryStub struct {
+	upserts []struct {
+		deviceID string
+		sensorID string
+	}
+	listResult []models.Sensor
+	listError  error
+}
+
 func (stub *deviceSensorDiscoveryUpdaterStub) UpdateDiscoveredSensors(_ context.Context, deviceID string, sensorNames []string) error {
 	stub.updatedDeviceID = deviceID
 	stub.updatedSensors = append([]string{}, sensorNames...)
 	return stub.err
+}
+
+func (stub *deviceSensorRepositoryStub) Upsert(_ context.Context, deviceID, sensorID string) error {
+	stub.upserts = append(stub.upserts, struct {
+		deviceID string
+		sensorID string
+	}{deviceID: deviceID, sensorID: sensorID})
+	return nil
+}
+
+func (stub *deviceSensorRepositoryStub) ListByDeviceID(_ context.Context, _ string) ([]models.Sensor, error) {
+	return stub.listResult, stub.listError
 }
 
 func (repository *deviceRepositoryStub) Create(_ context.Context, device *models.Device) error {
@@ -425,7 +446,9 @@ func TestDeviceService_UpdateDiscoveredSensors(t *testing.T) {
 				DiscoveredSensors: []string{"humidity"},
 			},
 		}
+		sensorRepository := &deviceSensorRepositoryStub{}
 		service := NewDeviceService(repository, nil)
+		service.SetSensorRepository(sensorRepository)
 
 		err := service.UpdateDiscoveredSensors(context.Background(), "esp32-lab", []string{"temperature", "humidity", "co2", "temperature"})
 		if err != nil {
@@ -438,6 +461,10 @@ func TestDeviceService_UpdateDiscoveredSensors(t *testing.T) {
 
 		if len(repository.updateInput.DiscoveredSensors) != 3 {
 			t.Fatalf("expected 3 discovered sensors, got %v", repository.updateInput.DiscoveredSensors)
+		}
+
+		if len(sensorRepository.upserts) != 3 {
+			t.Fatalf("expected 3 sensor upserts, got %d", len(sensorRepository.upserts))
 		}
 	})
 
@@ -452,6 +479,48 @@ func TestDeviceService_UpdateDiscoveredSensors(t *testing.T) {
 
 		if repository.updateInput != nil {
 			t.Fatal("expected no update for empty sensor list")
+		}
+	})
+}
+
+func TestDeviceService_ListSensors(t *testing.T) {
+	t.Run("returns empty list without repository", func(t *testing.T) {
+		service := NewDeviceService(&deviceRepositoryStub{}, nil)
+
+		sensors, err := service.ListSensors(context.Background(), "esp32-lab")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(sensors) != 0 {
+			t.Fatalf("expected 0 sensors, got %d", len(sensors))
+		}
+	})
+
+	t.Run("forwards to sensor repository", func(t *testing.T) {
+		now := time.Now().UTC()
+		sensorRepository := &deviceSensorRepositoryStub{
+			listResult: []models.Sensor{{ID: 1, DeviceID: "esp32-lab", SensorID: "temperature", CreatedAt: now, UpdatedAt: now}},
+		}
+		service := NewDeviceService(&deviceRepositoryStub{}, nil)
+		service.SetSensorRepository(sensorRepository)
+
+		sensors, err := service.ListSensors(context.Background(), "esp32-lab")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(sensors) != 1 || sensors[0].SensorID != "temperature" {
+			t.Fatalf("expected one temperature sensor, got %#v", sensors)
+		}
+	})
+
+	t.Run("validates device id", func(t *testing.T) {
+		service := NewDeviceService(&deviceRepositoryStub{}, nil)
+
+		_, err := service.ListSensors(context.Background(), "   ")
+		if !errors.Is(err, ErrDeviceValidation) {
+			t.Fatalf("expected ErrDeviceValidation, got %v", err)
 		}
 	})
 }

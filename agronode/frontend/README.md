@@ -29,7 +29,6 @@ Optional:
 
 Backend runtime variables:
 
-- `SEED_DEMO_DATA` (`true` by default; set to `false` to skip demo data seeding)
 
 Login is handled by the backend with these default development credentials unless overridden by environment variables:
 

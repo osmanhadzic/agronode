@@ -77,7 +77,7 @@ func (handler *realtimeHandler) streamTelemetry(context *gin.Context) {
 				return
 			}
 
-			if writeErr := connection.WriteJSON(reading); writeErr != nil {
+			if writeErr := connection.WriteJSON(toTelemetryResponse(reading)); writeErr != nil {
 				return
 			}
 		case <-pingTicker.C:

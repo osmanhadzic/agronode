@@ -13,10 +13,10 @@ import (
 )
 
 type TriggerService interface {
-	SetSensorTrigger(context context.Context, deviceID, sensor string, trigger models.SensorTrigger) error
-	GetSensorTrigger(context context.Context, deviceID, sensor string) (models.SensorTrigger, error)
+	SetSensorTrigger(context context.Context, deviceID, sensorID string, trigger models.SensorTrigger) error
+	GetSensorTrigger(context context.Context, deviceID, sensorID string) (models.SensorTrigger, error)
 	ListSensorTriggers(context context.Context, deviceID string) (map[string]models.SensorTrigger, error)
-	DeleteSensorTrigger(context context.Context, deviceID, sensor string) error
+	DeleteSensorTrigger(context context.Context, deviceID, sensorID string) error
 }
 
 type triggerHandler struct {
@@ -32,14 +32,16 @@ type sensorTriggerRequest struct {
 
 type sensorTriggerResponse struct {
 	DeviceID       string   `json:"deviceId"`
-	Sensor         string   `json:"sensor"`
+	Sensor         string   `json:"sensor,omitempty"`
+	SensorID       string   `json:"sensorId"`
 	Min            *float64 `json:"min,omitempty"`
 	Max            *float64 `json:"max,omitempty"`
 	TargetDeviceID string   `json:"targetDeviceId,omitempty"`
 }
 
 type triggerListItem struct {
-	Sensor         string   `json:"sensor"`
+	Sensor         string   `json:"sensor,omitempty"`
+	SensorID       string   `json:"sensorId"`
 	Min            *float64 `json:"min,omitempty"`
 	Max            *float64 `json:"max,omitempty"`
 	TargetDeviceID string   `json:"targetDeviceId,omitempty"`
@@ -54,21 +56,21 @@ func RegisterTriggerRoutes(api *gin.RouterGroup, logger *slog.Logger, service Tr
 	handler := &triggerHandler{logger: logger, service: service}
 
 	api.GET("/triggers/:deviceId", handler.listDeviceTriggers)
-	api.PUT("/triggers/:deviceId/:sensor", handler.setSensorTrigger)
-	api.GET("/triggers/:deviceId/:sensor", handler.getSensorTrigger)
-	api.DELETE("/triggers/:deviceId/:sensor", handler.deleteSensorTrigger)
+	api.PUT("/triggers/:deviceId/:sensorId", handler.setSensorTrigger)
+	api.GET("/triggers/:deviceId/:sensorId", handler.getSensorTrigger)
+	api.DELETE("/triggers/:deviceId/:sensorId", handler.deleteSensorTrigger)
 }
 
 func (handler *triggerHandler) deleteSensorTrigger(context *gin.Context) {
 	deviceID := context.Param("deviceId")
-	sensor := context.Param("sensor")
+	sensorID := context.Param("sensorId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	err = handler.service.DeleteSensorTrigger(requestContext, deviceID, sensor)
+	err = handler.service.DeleteSensorTrigger(requestContext, deviceID, sensorID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			context.JSON(http.StatusNotFound, gin.H{"error": "trigger not found"})
@@ -81,7 +83,7 @@ func (handler *triggerHandler) deleteSensorTrigger(context *gin.Context) {
 		}
 
 		if handler.logger != nil {
-			handler.logger.Error("delete sensor trigger failed", "deviceId", deviceID, "sensor", sensor, "error", err)
+			handler.logger.Error("delete sensor trigger failed", "deviceId", deviceID, "sensorId", sensorID, "error", err)
 		}
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete trigger"})
 		return
@@ -113,9 +115,10 @@ func (handler *triggerHandler) listDeviceTriggers(context *gin.Context) {
 	}
 
 	items := make([]triggerListItem, 0, len(triggers))
-	for sensor, trigger := range triggers {
+	for sensorID, trigger := range triggers {
 		items = append(items, triggerListItem{
-			Sensor:         sensor,
+			Sensor:         sensorID,
+			SensorID:       sensorID,
 			Min:            trigger.Min,
 			Max:            trigger.Max,
 			TargetDeviceID: trigger.TargetDeviceID,
@@ -130,7 +133,7 @@ func (handler *triggerHandler) listDeviceTriggers(context *gin.Context) {
 
 func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 	deviceID := context.Param("deviceId")
-	sensor := context.Param("sensor")
+	sensorID := context.Param("sensorId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -149,7 +152,7 @@ func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 		TargetDeviceID: request.TargetDeviceID,
 	}
 
-	if err := handler.service.SetSensorTrigger(requestContext, deviceID, sensor, trigger); err != nil {
+	if err := handler.service.SetSensorTrigger(requestContext, deviceID, sensorID, trigger); err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			context.JSON(http.StatusNotFound, gin.H{"error": "device not found in organization"})
 			return
@@ -161,7 +164,7 @@ func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 		}
 
 		if handler.logger != nil {
-			handler.logger.Error("set sensor trigger failed", "deviceId", deviceID, "sensor", sensor, "error", err)
+			handler.logger.Error("set sensor trigger failed", "deviceId", deviceID, "sensorId", sensorID, "error", err)
 		}
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set trigger"})
 		return
@@ -173,7 +176,8 @@ func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 
 	context.JSON(http.StatusOK, sensorTriggerResponse{
 		DeviceID:       deviceID,
-		Sensor:         sensor,
+		Sensor:         sensorID,
+		SensorID:       sensorID,
 		Min:            trigger.Min,
 		Max:            trigger.Max,
 		TargetDeviceID: trigger.TargetDeviceID,
@@ -182,19 +186,20 @@ func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 
 func (handler *triggerHandler) getSensorTrigger(context *gin.Context) {
 	deviceID := context.Param("deviceId")
-	sensor := context.Param("sensor")
+	sensorID := context.Param("sensorId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	trigger, err := handler.service.GetSensorTrigger(requestContext, deviceID, sensor)
+	trigger, err := handler.service.GetSensorTrigger(requestContext, deviceID, sensorID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			context.JSON(http.StatusOK, sensorTriggerResponse{
 				DeviceID: deviceID,
-				Sensor:   sensor,
+				Sensor:   sensorID,
+				SensorID: sensorID,
 			})
 			return
 		}
@@ -205,7 +210,7 @@ func (handler *triggerHandler) getSensorTrigger(context *gin.Context) {
 		}
 
 		if handler.logger != nil {
-			handler.logger.Error("get sensor trigger failed", "deviceId", deviceID, "sensor", sensor, "error", err)
+			handler.logger.Error("get sensor trigger failed", "deviceId", deviceID, "sensorId", sensorID, "error", err)
 		}
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch trigger"})
 		return
@@ -213,7 +218,8 @@ func (handler *triggerHandler) getSensorTrigger(context *gin.Context) {
 
 	context.JSON(http.StatusOK, sensorTriggerResponse{
 		DeviceID:       deviceID,
-		Sensor:         sensor,
+		Sensor:         sensorID,
+		SensorID:       sensorID,
 		Min:            trigger.Min,
 		Max:            trigger.Max,
 		TargetDeviceID: trigger.TargetDeviceID,

@@ -17,6 +17,7 @@ import (
 type TelemetryService struct {
 	repository             repositories.TelemetryRepository
 	triggerRepository      repositories.TriggerRepository
+	sensorRepository       repositories.SensorRepository
 	logger                 *slog.Logger
 	broadcaster            TelemetryBroadcaster
 	triggerPublisher       TriggerCommandPublisher
@@ -80,15 +81,20 @@ func (service *TelemetryService) SetTriggerRepository(repository repositories.Tr
 	service.triggerRepository = repository
 }
 
-func (service *TelemetryService) SetSensorTrigger(ctx context.Context, deviceID, sensor string, trigger models.SensorTrigger) error {
+// SetSensorRepository sets the optional sensor repository used to persist trigger sensors.
+func (service *TelemetryService) SetSensorRepository(repository repositories.SensorRepository) {
+	service.sensorRepository = repository
+}
+
+func (service *TelemetryService) SetSensorTrigger(ctx context.Context, deviceID, sensorID string, trigger models.SensorTrigger) error {
 	trimmedDeviceID := strings.TrimSpace(deviceID)
 	if trimmedDeviceID == "" {
 		return fmt.Errorf("%w: device id is required", ErrValidation)
 	}
 
-	trimmedSensor := strings.TrimSpace(sensor)
-	if trimmedSensor == "" {
-		return fmt.Errorf("%w: sensor is required", ErrValidation)
+	trimmedSensorID := strings.TrimSpace(sensorID)
+	if trimmedSensorID == "" {
+		return fmt.Errorf("%w: sensor id is required", ErrValidation)
 	}
 
 	if trigger.Min == nil && trigger.Max == nil {
@@ -105,19 +111,14 @@ func (service *TelemetryService) SetSensorTrigger(ctx context.Context, deviceID,
 		trigger.TargetDeviceID = strings.TrimSpace(trigger.TargetDeviceID)
 	}
 
-	if service.triggerRepository != nil {
-		if err := service.triggerRepository.Upsert(ctx, trimmedDeviceID, trimmedSensor, trigger); err != nil {
+	if service.sensorRepository != nil {
+		if err := service.sensorRepository.Upsert(ctx, trimmedDeviceID, trimmedSensorID); err != nil {
 			return err
 		}
 	}
 
-	if service.repository != nil {
-		reading := models.TelemetryReading{
-			DeviceID:  trimmedDeviceID,
-			CreatedAt: time.Now().UTC(),
-			Sensors:   map[string]float64{trimmedSensor: 0},
-		}
-		if err := service.repository.Save(ctx, reading); err != nil {
+	if service.triggerRepository != nil {
+		if err := service.triggerRepository.Upsert(ctx, trimmedDeviceID, trimmedSensorID, trigger); err != nil {
 			return err
 		}
 	}
@@ -128,35 +129,35 @@ func (service *TelemetryService) SetSensorTrigger(ctx context.Context, deviceID,
 	if service.triggers[trimmedDeviceID] == nil {
 		service.triggers[trimmedDeviceID] = make(map[string]models.SensorTrigger)
 	}
-	service.triggers[trimmedDeviceID][trimmedSensor] = trigger
+	service.triggers[trimmedDeviceID][trimmedSensorID] = trigger
 
 	if service.triggerState[trimmedDeviceID] == nil {
 		service.triggerState[trimmedDeviceID] = make(map[string]sensorTriggerState)
 	}
-	service.triggerState[trimmedDeviceID][trimmedSensor] = sensorTriggerState{}
+	service.triggerState[trimmedDeviceID][trimmedSensorID] = sensorTriggerState{}
 
 	if service.logger != nil {
-		service.logger.Info("sensor trigger configured", "deviceId", trimmedDeviceID, "sensor", trimmedSensor, "min", trigger.Min, "max", trigger.Max)
+		service.logger.Info("sensor trigger configured", "deviceId", trimmedDeviceID, "sensorId", trimmedSensorID, "min", trigger.Min, "max", trigger.Max)
 	}
 
 	return nil
 }
 
-func (service *TelemetryService) GetSensorTrigger(ctx context.Context, deviceID, sensor string) (models.SensorTrigger, error) {
+func (service *TelemetryService) GetSensorTrigger(ctx context.Context, deviceID, sensorID string) (models.SensorTrigger, error) {
 	trimmedDeviceID := strings.TrimSpace(deviceID)
 	if trimmedDeviceID == "" {
 		return models.SensorTrigger{}, fmt.Errorf("%w: device id is required", ErrValidation)
 	}
 
-	trimmedSensor := strings.TrimSpace(sensor)
-	if trimmedSensor == "" {
-		return models.SensorTrigger{}, fmt.Errorf("%w: sensor is required", ErrValidation)
+	trimmedSensorID := strings.TrimSpace(sensorID)
+	if trimmedSensorID == "" {
+		return models.SensorTrigger{}, fmt.Errorf("%w: sensor id is required", ErrValidation)
 	}
 
 	service.triggerMutex.RLock()
 	deviceTriggers, exists := service.triggers[trimmedDeviceID]
 	if exists {
-		trigger, triggerExists := deviceTriggers[trimmedSensor]
+			trigger, triggerExists := deviceTriggers[trimmedSensorID]
 		service.triggerMutex.RUnlock()
 		if triggerExists {
 			return trigger, nil
@@ -177,7 +178,7 @@ func (service *TelemetryService) GetSensorTrigger(ctx context.Context, deviceID,
 		return models.SensorTrigger{}, repositories.ErrNotFound
 	}
 
-	trigger, triggerExists := deviceTriggers[trimmedSensor]
+	trigger, triggerExists := deviceTriggers[trimmedSensorID]
 	service.triggerMutex.RUnlock()
 	if !triggerExists {
 		return models.SensorTrigger{}, repositories.ErrNotFound
@@ -228,19 +229,19 @@ func (service *TelemetryService) ListSensorTriggers(ctx context.Context, deviceI
 	return clonedTriggers, nil
 }
 
-func (service *TelemetryService) DeleteSensorTrigger(ctx context.Context, deviceID, sensor string) error {
+func (service *TelemetryService) DeleteSensorTrigger(ctx context.Context, deviceID, sensorID string) error {
 	trimmedDeviceID := strings.TrimSpace(deviceID)
 	if trimmedDeviceID == "" {
 		return fmt.Errorf("%w: device id is required", ErrValidation)
 	}
 
-	trimmedSensor := strings.TrimSpace(sensor)
-	if trimmedSensor == "" {
-		return fmt.Errorf("%w: sensor is required", ErrValidation)
+	trimmedSensorID := strings.TrimSpace(sensorID)
+	if trimmedSensorID == "" {
+		return fmt.Errorf("%w: sensor id is required", ErrValidation)
 	}
 
 	if service.triggerRepository != nil {
-		if err := service.triggerRepository.DeleteByDeviceAndSensor(ctx, trimmedDeviceID, trimmedSensor); err != nil {
+		if err := service.triggerRepository.DeleteByDeviceAndSensor(ctx, trimmedDeviceID, trimmedSensorID); err != nil {
 			return err
 		}
 	}
@@ -249,15 +250,15 @@ func (service *TelemetryService) DeleteSensorTrigger(ctx context.Context, device
 	defer service.triggerMutex.Unlock()
 
 	if service.triggers[trimmedDeviceID] != nil {
-		delete(service.triggers[trimmedDeviceID], trimmedSensor)
+		delete(service.triggers[trimmedDeviceID], trimmedSensorID)
 	}
 
 	if service.triggerState[trimmedDeviceID] != nil {
-		delete(service.triggerState[trimmedDeviceID], trimmedSensor)
+		delete(service.triggerState[trimmedDeviceID], trimmedSensorID)
 	}
 
 	if service.logger != nil {
-		service.logger.Info("sensor trigger deleted", "deviceId", trimmedDeviceID, "sensor", trimmedSensor)
+		service.logger.Info("sensor trigger deleted", "deviceId", trimmedDeviceID, "sensorId", trimmedSensorID)
 	}
 
 	return nil
@@ -270,6 +271,18 @@ func (service *TelemetryService) ProcessTelemetry(context context.Context, readi
 
 	if err := validateTelemetryReading(reading); err != nil {
 		return err
+	}
+
+	resolvedSensorID := resolveTelemetrySensorID(reading)
+	if resolvedSensorID == "" {
+		return fmt.Errorf("%w: sensor id is required", ErrValidation)
+	}
+	reading.SensorID = resolvedSensorID
+
+	if service.sensorRepository != nil {
+		if err := service.sensorRepository.Upsert(context, strings.TrimSpace(reading.DeviceID), resolvedSensorID); err != nil {
+			return err
+		}
 	}
 
 	if err := service.repository.Save(context, reading); err != nil {
@@ -285,13 +298,44 @@ func (service *TelemetryService) ProcessTelemetry(context context.Context, readi
 	return nil
 }
 
+func resolveTelemetrySensorID(reading models.TelemetryReading) string {
+	trimmedSensorID := strings.TrimSpace(reading.SensorID)
+	if trimmedSensorID != "" {
+		return trimmedSensorID
+	}
+
+	if len(reading.Sensors) != 1 {
+		return ""
+	}
+
+	for sensorID := range reading.Sensors {
+		trimmedSensorID = strings.TrimSpace(sensorID)
+		if trimmedSensorID == "" {
+			return ""
+		}
+
+		return trimmedSensorID
+	}
+
+	return ""
+}
+
 func (service *TelemetryService) HandleTelemetry(context context.Context, telemetry mqtt.TelemetryEnvelope) error {
 	temperature := 0.0
 	humidity := 0.0
 	if sensorTemperature, hasTemperature := telemetry.Sensors["temperature"]; hasTemperature {
 		temperature = sensorTemperature
 	}
+	if sensorTemperature, hasTemperature := telemetry.Sensors["dht11-temp"]; hasTemperature {
+		temperature = sensorTemperature
+	}
 	if sensorHumidity, hasHumidity := telemetry.Sensors["humidity"]; hasHumidity {
+		humidity = sensorHumidity
+	}
+	if sensorHumidity, hasHumidity := telemetry.Sensors["humidity_dht11"]; hasHumidity {
+		humidity = sensorHumidity
+	}
+	if sensorHumidity, hasHumidity := telemetry.Sensors["dht11-humidity"]; hasHumidity {
 		humidity = sensorHumidity
 	}
 
@@ -307,6 +351,7 @@ func (service *TelemetryService) HandleTelemetry(context context.Context, teleme
 
 	reading := models.TelemetryReading{
 		DeviceID:    telemetry.DeviceID,
+		SensorID:    telemetry.SensorID,
 		Temperature: temperature,
 		Humidity:    humidity,
 		Sensors:     sensors,
@@ -395,6 +440,22 @@ func (service *TelemetryService) GetTelemetryByDeviceID(context context.Context,
 	}
 
 	return service.repository.ListByDeviceID(context, deviceID)
+}
+
+func (service *TelemetryService) GetTelemetryByDeviceIDAndSensorID(context context.Context, deviceID, sensorID string) ([]models.TelemetryReading, error) {
+	if service.repository == nil {
+		return nil, errors.New("telemetry repository is not configured")
+	}
+
+	if strings.TrimSpace(deviceID) == "" {
+		return nil, fmt.Errorf("%w: device id is required", ErrValidation)
+	}
+
+	if strings.TrimSpace(sensorID) == "" {
+		return nil, fmt.Errorf("%w: sensor id is required", ErrValidation)
+	}
+
+	return service.repository.ListByDeviceIDAndSensorID(context, deviceID, sensorID)
 }
 
 func (service *TelemetryService) GetTelemetryByDeviceIDWithDateFilter(context context.Context, deviceID string, period string, startDate, endDate *time.Time) ([]models.TelemetryReading, error) {
@@ -517,25 +578,25 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 	stateBySensor := service.triggerState[reading.DeviceID]
 	triggersCopy := make(map[string]models.SensorTrigger, len(deviceTriggers))
 	statesCopy := make(map[string]sensorTriggerState, len(deviceTriggers))
-	for sensor, trigger := range deviceTriggers {
-		triggersCopy[sensor] = trigger
-		statesCopy[sensor] = stateBySensor[sensor]
+	for sensorID, trigger := range deviceTriggers {
+		triggersCopy[sensorID] = trigger
+		statesCopy[sensorID] = stateBySensor[sensorID]
 	}
 	service.triggerMutex.RUnlock()
 
-	for sensor, trigger := range triggersCopy {
-		value, hasSensor := reading.Sensors[sensor]
+	for sensorID, trigger := range triggersCopy {
+		value, hasSensor := reading.Sensors[sensorID]
 		if !hasSensor {
 			continue
 		}
 
-		state := statesCopy[sensor]
+		state := statesCopy[sensorID]
 
 		if trigger.Min != nil {
 			if value <= *trigger.Min {
 				if !state.MinActive {
 					targetDeviceID := resolveTargetDeviceID(reading.DeviceID, trigger)
-					service.sendActivation(context, targetDeviceID, sensor, "below_min", "min", value, *trigger.Min)
+					service.sendActivation(context, targetDeviceID, sensorID, "below_min", "min", value, *trigger.Min)
 					state.MinActive = true
 				}
 			} else {
@@ -547,7 +608,7 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 			if value >= *trigger.Max {
 				if !state.MaxActive {
 					targetDeviceID := resolveTargetDeviceID(reading.DeviceID, trigger)
-					service.sendActivation(context, targetDeviceID, sensor, "above_max", "max", value, *trigger.Max)
+					service.sendActivation(context, targetDeviceID, sensorID, "above_max", "max", value, *trigger.Max)
 					state.MaxActive = true
 				}
 			} else {
@@ -555,20 +616,20 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 			}
 		}
 
-		statesCopy[sensor] = state
+		statesCopy[sensorID] = state
 	}
 
 	service.triggerMutex.Lock()
 	if service.triggerState[reading.DeviceID] == nil {
 		service.triggerState[reading.DeviceID] = make(map[string]sensorTriggerState)
 	}
-	for sensor, state := range statesCopy {
-		service.triggerState[reading.DeviceID][sensor] = state
+	for sensorID, state := range statesCopy {
+		service.triggerState[reading.DeviceID][sensorID] = state
 	}
 	service.triggerMutex.Unlock()
 }
 
-func (service *TelemetryService) sendActivation(context context.Context, deviceID, sensor, triggerType, limitType string, value, threshold float64) {
+func (service *TelemetryService) sendActivation(context context.Context, deviceID, sensorID, triggerType, limitType string, value, threshold float64) {
 	if service.triggerPublisher == nil {
 		if service.logger != nil {
 			service.logger.Warn("activation not sent: trigger publisher not configured", "deviceId", deviceID, "triggerType", triggerType)
@@ -579,7 +640,7 @@ func (service *TelemetryService) sendActivation(context context.Context, deviceI
 	command := mqtt.ActivationCommand{
 		DeviceID:  deviceID,
 		Trigger:   triggerType,
-		Sensor:    sensor,
+		Sensor:    sensorID,
 		LimitType: limitType,
 		Value:     value,
 		Threshold: threshold,
@@ -621,15 +682,15 @@ func (service *TelemetryService) loadDeviceTriggers(context context.Context, dev
 	}
 
 	service.triggers[deviceID] = triggers
-	for sensor, trigger := range service.triggers[deviceID] {
-		service.triggers[deviceID][sensor] = normalizeTriggerTarget(deviceID, trigger)
+	for sensorID, trigger := range service.triggers[deviceID] {
+		service.triggers[deviceID][sensorID] = normalizeTriggerTarget(deviceID, trigger)
 	}
 	if service.triggerState[deviceID] == nil {
 		service.triggerState[deviceID] = make(map[string]sensorTriggerState, len(triggers))
 	}
-	for sensor := range triggers {
-		if _, exists := service.triggerState[deviceID][sensor]; !exists {
-			service.triggerState[deviceID][sensor] = sensorTriggerState{}
+	for sensorID := range triggers {
+		if _, exists := service.triggerState[deviceID][sensorID]; !exists {
+			service.triggerState[deviceID][sensorID] = sensorTriggerState{}
 		}
 	}
 

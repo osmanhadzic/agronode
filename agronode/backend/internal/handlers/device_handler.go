@@ -18,6 +18,7 @@ type DeviceRegistrationService interface {
 	RegisterDevice(ctx context.Context, deviceID string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
 	GetDevice(ctx context.Context, deviceID string) (*models.Device, error)
 	ListDevices(ctx context.Context, params services.DeviceListParams) ([]models.Device, error)
+	ListSensors(ctx context.Context, deviceID string) ([]models.Sensor, error)
 }
 
 type deviceHandler struct {
@@ -48,11 +49,20 @@ type deviceResponse struct {
 	UpdatedAt       string                   `json:"updatedAt"`
 }
 
+type sensorResponse struct {
+	ID        uint   `json:"id"`
+	DeviceID  string `json:"deviceId"`
+	SensorID  string `json:"sensorId"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
 func RegisterDeviceRoutes(api *gin.RouterGroup, logger *slog.Logger, service DeviceRegistrationService) {
 	handler := &deviceHandler{logger: logger, service: service}
 
 	devices := api.Group("/devices")
 	devices.POST("/register", handler.registerDevice)
+	devices.GET("/:deviceId/sensors", handler.listDeviceSensors)
 	devices.GET("/:deviceId", handler.getDevice)
 	devices.GET("", handler.listDevices)
 }
@@ -156,6 +166,29 @@ func (handler *deviceHandler) listDevices(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, toDeviceResponses(devices))
 }
 
+func (handler *deviceHandler) listDeviceSensors(ctx *gin.Context) {
+	deviceID := ctx.Param("deviceId")
+	requestContext, err := requestContextWithOrganizationScope(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	sensors, err := handler.service.ListSensors(requestContext, deviceID)
+	if err != nil {
+		if errors.Is(err, services.ErrDeviceValidation) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		handler.logger.Error("list device sensors failed", "deviceId", deviceID, "error", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch sensors"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, toSensorResponses(sensors))
+}
+
 func toDeviceResponse(device *models.Device) deviceResponse {
 	response := deviceResponse{
 		ID:              device.ID,
@@ -183,6 +216,21 @@ func toDeviceResponses(devices []models.Device) []deviceResponse {
 		deviceCopy := device
 		responses[i] = toDeviceResponse(&deviceCopy)
 	}
+	return responses
+}
+
+func toSensorResponses(sensors []models.Sensor) []sensorResponse {
+	responses := make([]sensorResponse, len(sensors))
+	for i, sensor := range sensors {
+		responses[i] = sensorResponse{
+			ID:        sensor.ID,
+			DeviceID:  sensor.DeviceID,
+			SensorID:  sensor.SensorID,
+			CreatedAt: sensor.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt: sensor.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		}
+	}
+
 	return responses
 }
 
