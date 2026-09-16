@@ -18,7 +18,7 @@ func NewGormTriggerRepository(database *gorm.DB) *GormTriggerRepository {
 	return &GormTriggerRepository{database: database}
 }
 
-func (repository *GormTriggerRepository) Upsert(context context.Context, deviceID, sensor string, trigger models.SensorTrigger) error {
+func (repository *GormTriggerRepository) Upsert(context context.Context, deviceID, sensorID string, trigger models.SensorTrigger) error {
 	if organizationID, ok := organizationIDFromContext(context); ok {
 		var count int64
 		if err := repository.database.WithContext(context).
@@ -40,7 +40,7 @@ func (repository *GormTriggerRepository) Upsert(context context.Context, deviceI
 
 	entity := models.SensorTriggerEntity{
 		DeviceID:       deviceID,
-		Sensor:         sensor,
+		SensorID:       sensorID,
 		MinValue:       trigger.Min,
 		MaxValue:       trigger.Max,
 		TargetDeviceID: targetDeviceID,
@@ -51,7 +51,7 @@ func (repository *GormTriggerRepository) Upsert(context context.Context, deviceI
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
 				{Name: "device_id"},
-				{Name: "sensor"},
+				{Name: "sensor_id"},
 			},
 			DoUpdates: clause.Assignments(map[string]interface{}{
 				"min_value":        entity.MinValue,
@@ -63,10 +63,10 @@ func (repository *GormTriggerRepository) Upsert(context context.Context, deviceI
 		Create(&entity).Error
 }
 
-func (repository *GormTriggerRepository) GetByDeviceAndSensor(context context.Context, deviceID, sensor string) (models.SensorTrigger, error) {
+func (repository *GormTriggerRepository) GetByDeviceAndSensor(context context.Context, deviceID, sensorID string) (models.SensorTrigger, error) {
 	var entity models.SensorTriggerEntity
 	db := repository.database.WithContext(context).
-		Where("sensor_triggers.device_id = ? AND sensor_triggers.sensor = ?", deviceID, sensor)
+		Where("sensor_triggers.device_id = ? AND sensor_triggers.sensor_id = ?", deviceID, sensorID)
 
 	if organizationID, ok := organizationIDFromContext(context); ok {
 		db = db.
@@ -74,8 +74,7 @@ func (repository *GormTriggerRepository) GetByDeviceAndSensor(context context.Co
 			Where("devices.organization_id = ?", organizationID)
 	}
 
-	err := db.
-		First(&entity).Error
+	err := db.First(&entity).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return models.SensorTrigger{}, ErrNotFound
@@ -102,15 +101,14 @@ func (repository *GormTriggerRepository) ListByDeviceID(context context.Context,
 			Where("devices.organization_id = ?", organizationID)
 	}
 
-	err := db.
-		Find(&entities).Error
+	err := db.Find(&entities).Error
 	if err != nil {
 		return nil, err
 	}
 
 	triggers := make(map[string]models.SensorTrigger, len(entities))
 	for _, entity := range entities {
-		triggers[entity.Sensor] = models.SensorTrigger{
+		triggers[entity.SensorID] = models.SensorTrigger{
 			Min:            entity.MinValue,
 			Max:            entity.MaxValue,
 			TargetDeviceID: valueOrEmpty(entity.TargetDeviceID),
@@ -120,9 +118,9 @@ func (repository *GormTriggerRepository) ListByDeviceID(context context.Context,
 	return triggers, nil
 }
 
-func (repository *GormTriggerRepository) DeleteByDeviceAndSensor(context context.Context, deviceID, sensor string) error {
+func (repository *GormTriggerRepository) DeleteByDeviceAndSensor(context context.Context, deviceID, sensorID string) error {
 	db := repository.database.WithContext(context).
-		Where("sensor_triggers.device_id = ? AND sensor_triggers.sensor = ?", deviceID, sensor)
+		Where("sensor_triggers.device_id = ? AND sensor_triggers.sensor_id = ?", deviceID, sensorID)
 
 	if organizationID, ok := organizationIDFromContext(context); ok {
 		scopedDevices := repository.database.WithContext(context).
@@ -133,8 +131,7 @@ func (repository *GormTriggerRepository) DeleteByDeviceAndSensor(context context
 		db = db.Where("sensor_triggers.device_id IN (?)", scopedDevices)
 	}
 
-	result := db.
-		Delete(&models.SensorTriggerEntity{})
+	result := db.Delete(&models.SensorTriggerEntity{})
 	if result.Error != nil {
 		return result.Error
 	}

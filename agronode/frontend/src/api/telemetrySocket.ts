@@ -39,6 +39,7 @@ function createSocket<T>(
         const message = JSON.parse(event.data) as T
         onMessage(message)
       } catch {
+        // Ignore parsing errors
       }
     }
 

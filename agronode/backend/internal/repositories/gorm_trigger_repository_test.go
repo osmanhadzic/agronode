@@ -27,6 +27,7 @@ func newTestTriggerDB(t *testing.T) *gorm.DB {
 			device_id TEXT NOT NULL UNIQUE,
 			organization_id INTEGER,
 			zone_id INTEGER,
+			device_type TEXT NOT NULL DEFAULT 'publisher',
 			status TEXT,
 			firmware_version TEXT,
 			metadata TEXT,
@@ -48,12 +49,12 @@ func newTestTriggerDB(t *testing.T) *gorm.DB {
 		CREATE TABLE sensor_triggers (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			device_id TEXT NOT NULL,
-			sensor TEXT NOT NULL,
+			sensor_id TEXT NOT NULL,
 			min_value REAL,
 			max_value REAL,
 			target_device_id TEXT,
 			updated_at DATETIME NOT NULL,
-			UNIQUE(device_id, sensor)
+			UNIQUE(device_id, sensor_id)
 		);
 	`).Error; err != nil {
 		t.Fatalf("create sensor_triggers table: %v", err)
@@ -123,7 +124,7 @@ func TestGormTriggerRepository_DeleteByDeviceAndSensor(t *testing.T) {
 			t.Fatalf("seed device: %v", err)
 		}
 
-		trigger := models.SensorTriggerEntity{DeviceID: "esp32-lab", Sensor: "temperature", MinValue: floatPtr(10), MaxValue: floatPtr(20), UpdatedAt: time.Now().UTC()}
+		trigger := models.SensorTriggerEntity{DeviceID: "esp32-lab", SensorID: "temperature", MinValue: floatPtr(10), MaxValue: floatPtr(20), UpdatedAt: time.Now().UTC()}
 		if err := db.Create(&trigger).Error; err != nil {
 			t.Fatalf("seed trigger: %v", err)
 		}

@@ -7,8 +7,8 @@ import (
 )
 
 type TriggerRepository interface {
-	Upsert(context context.Context, deviceID, sensor string, trigger models.SensorTrigger) error
-	GetByDeviceAndSensor(context context.Context, deviceID, sensor string) (models.SensorTrigger, error)
+	Upsert(context context.Context, deviceID, sensorID string, trigger models.SensorTrigger) error
+	GetByDeviceAndSensor(context context.Context, deviceID, sensorID string) (models.SensorTrigger, error)
 	ListByDeviceID(context context.Context, deviceID string) (map[string]models.SensorTrigger, error)
-	DeleteByDeviceAndSensor(context context.Context, deviceID, sensor string) error
+	DeleteByDeviceAndSensor(context context.Context, deviceID, sensorID string) error
 }

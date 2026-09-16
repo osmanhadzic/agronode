@@ -44,16 +44,19 @@ func (message testMessage) Ack() {}
 
 type telemetryConsumerStub struct {
 	handled int
+	last    TelemetryEnvelope
 }
 
-func (stub *telemetryConsumerStub) HandleTelemetry(_ context.Context, _ TelemetryEnvelope) error {
+func (stub *telemetryConsumerStub) HandleTelemetry(_ context.Context, envelope TelemetryEnvelope) error {
 	stub.handled++
+	stub.last = envelope
 	return nil
 }
 
 type deviceRegistrarStub struct {
 	registerCalls int
 	deviceID      string
+	deviceType    string
 	firmware      string
 	metadata      models.DeviceMetadata
 	tags          []string
@@ -61,20 +64,21 @@ type deviceRegistrarStub struct {
 	err           error
 }
 
-func (stub *deviceRegistrarStub) RegisterDevice(ctx context.Context, deviceID string, firmwareVersion string, metadata models.DeviceMetadata, _ string, _ string, tags []string) (*models.Device, error) {
+func (stub *deviceRegistrarStub) RegisterDevice(ctx context.Context, deviceID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, _ string, _ string, tags []string) (*models.Device, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
 
 	stub.registerCalls++
 	stub.deviceID = deviceID
+	stub.deviceType = deviceType
 	stub.firmware = firmwareVersion
 	stub.metadata = metadata
 	stub.tags = append([]string{}, tags...)
 	if organizationID, ok := tenancy.OrganizationIDFromContext(ctx); ok {
 		stub.organization = organizationID
 	}
-	return &models.Device{DeviceID: deviceID, FirmwareVersion: firmwareVersion}, nil
+	return &models.Device{DeviceID: deviceID, DeviceType: deviceType, FirmwareVersion: firmwareVersion}, nil
 }
 
 func testLogger() *slog.Logger {
@@ -95,6 +99,17 @@ func TestExtractDeviceIDFromTopic(t *testing.T) {
 
 	t.Run("accepts register topic", func(t *testing.T) {
 		deviceID, err := extractDeviceIDFromTopic("agronode/Plastenik-1/register")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if deviceID != "Plastenik-1" {
+			t.Fatalf("expected device id %q, got %q", "Plastenik-1", deviceID)
+		}
+	})
+
+	t.Run("accepts status topic", func(t *testing.T) {
+		deviceID, err := extractDeviceIDFromTopic("agronode/Plastenik-1/status")
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -153,6 +168,62 @@ func TestParseRegistrationPayload(t *testing.T) {
 			t.Fatal("expected error for invalid json")
 		}
 	})
+}
+
+func TestParseTelemetryPayload(t *testing.T) {
+	t.Run("parses sensor id and sensors map", func(t *testing.T) {
+		payload, err := parseTelemetryPayload([]byte(`{"deviceId":"Plastenik-1","sensorId":"temperature","timestamp":1717243200,"sensors":{"temperature":24.5,"humidity":61}}`))
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if payload.DeviceID != "Plastenik-1" {
+			t.Fatalf("expected device id %q, got %q", "Plastenik-1", payload.DeviceID)
+		}
+
+		if payload.SensorID != "temperature" {
+			t.Fatalf("expected sensor id %q, got %q", "temperature", payload.SensorID)
+		}
+
+		if payload.Sensors["temperature"] != 24.5 || payload.Sensors["humidity"] != 61 {
+			t.Fatalf("unexpected sensors map: %#v", payload.Sensors)
+		}
+	})
+
+	t.Run("treats legacy numeric root fields as sensors", func(t *testing.T) {
+		payload, err := parseTelemetryPayload([]byte(`{"deviceId":"Plastenik-1","sensorId":"co2","co2":420}`))
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if payload.SensorID != "co2" {
+			t.Fatalf("expected sensor id %q, got %q", "co2", payload.SensorID)
+		}
+
+		if payload.Sensors["co2"] != 420 {
+			t.Fatalf("expected co2 sensor value 420, got %#v", payload.Sensors)
+		}
+	})
+}
+
+func TestHandleMessage_ForwardsSensorID(t *testing.T) {
+	consumer := &telemetryConsumerStub{}
+	client := &Client{logger: testLogger(), consumer: consumer}
+
+	message := testMessage{
+		topic:   "agronode/Plastenik-1/telemetry",
+		payload: []byte(`{"sensorId":"humidity","sensors":{"humidity":61}}`),
+	}
+
+	client.handleMessage(nil, message)
+
+	if consumer.handled != 1 {
+		t.Fatalf("expected telemetry handler to be called once, got %d", consumer.handled)
+	}
+
+	if consumer.last.SensorID != "humidity" {
+		t.Fatalf("expected forwarded sensor id %q, got %q", "humidity", consumer.last.SensorID)
+	}
 }
 
 func TestHandleMessage_RegisterTopic(t *testing.T) {

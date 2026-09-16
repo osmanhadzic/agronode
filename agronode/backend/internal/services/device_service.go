@@ -19,9 +19,10 @@ import (
 var ErrDeviceValidation = errors.New("device validation failed")
 
 type DeviceService struct {
-	repository     repositories.DeviceRepository
-	logger         *slog.Logger
-	eventPublisher DeviceEventPublisher
+	repository       repositories.DeviceRepository
+	sensorRepository repositories.SensorRepository
+	logger           *slog.Logger
+	eventPublisher   DeviceEventPublisher
 }
 
 type DevicePresenceUpdater interface {
@@ -34,6 +35,10 @@ type DeviceEventPublisher interface {
 
 type DeviceSensorDiscoveryUpdater interface {
 	UpdateDiscoveredSensors(ctx context.Context, deviceID string, sensorNames []string) error
+}
+
+type DeviceSensorLister interface {
+	ListSensors(ctx context.Context, deviceID string) ([]models.Sensor, error)
 }
 
 const (
@@ -62,8 +67,26 @@ func (service *DeviceService) SetEventPublisher(publisher DeviceEventPublisher) 
 	service.eventPublisher = publisher
 }
 
+// SetSensorRepository sets the optional sensor repository used to persist discovered sensors.
+func (service *DeviceService) SetSensorRepository(repository repositories.SensorRepository) {
+	service.sensorRepository = repository
+}
+
+// ListSensors returns sensors registered for a device.
+func (service *DeviceService) ListSensors(ctx context.Context, deviceID string) ([]models.Sensor, error) {
+	if err := validateDeviceID(deviceID); err != nil {
+		return nil, err
+	}
+
+	if service.sensorRepository == nil {
+		return []models.Sensor{}, nil
+	}
+
+	return service.sensorRepository.ListByDeviceID(ctx, deviceID)
+}
+
 // RegisterDevice registers a new device or returns existing one (idempotent)
-func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error) {
+func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error) {
 	if err := validateDeviceID(deviceID); err != nil {
 		return nil, err
 	}
@@ -76,6 +99,8 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 	if err := validateDeviceMetadata(metadata); err != nil {
 		return nil, err
 	}
+
+	normalizedDeviceType := normalizeDeviceType(deviceType)
 
 	normalizedFirmware := strings.TrimSpace(firmwareVersion)
 
@@ -114,6 +139,11 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 			shouldUpdate = true
 		}
 
+		if normalizedDeviceType != "" && normalizedDeviceType != existingDevice.DeviceType {
+			existingDevice.DeviceType = normalizedDeviceType
+			shouldUpdate = true
+		}
+
 		previousFirmware := existingDevice.FirmwareVersion
 		if normalizedFirmware != "" && normalizedFirmware != previousFirmware {
 			existingDevice.FirmwareVersion = normalizedFirmware
@@ -148,6 +178,7 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 
 	device := &models.Device{
 		DeviceID:              deviceID,
+		DeviceType:            normalizedDeviceType,
 		Status:                models.DeviceStatusUnknown,
 		FirmwareVersion:       normalizedFirmware,
 		Metadata:              metadata,
@@ -177,6 +208,20 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 	)
 
 	return device, nil
+}
+
+func normalizeDeviceType(deviceType string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(deviceType))
+	if trimmed == "" {
+		return models.DeviceTypePublisher
+	}
+
+	switch trimmed {
+	case models.DeviceTypePublisher, models.DeviceTypeReceiver, models.DeviceTypeUnknown:
+		return trimmed
+	default:
+		return models.DeviceTypePublisher
+	}
 }
 
 // GetDevice retrieves a device by its device_id
@@ -332,6 +377,12 @@ func (service *DeviceService) UpdateDiscoveredSensors(ctx context.Context, devic
 
 	changed := false
 	for _, sensor := range normalizedSensors {
+		if service.sensorRepository != nil {
+			if err := service.sensorRepository.Upsert(ctx, deviceID, sensor); err != nil {
+				return err
+			}
+		}
+
 		if _, ok := existing[sensor]; ok {
 			continue
 		}

@@ -16,6 +16,7 @@ import (
 type TelemetryQueryService interface {
 	GetAllTelemetry(context.Context) ([]models.TelemetryReading, error)
 	GetTelemetryByDeviceID(context.Context, string) ([]models.TelemetryReading, error)
+	GetTelemetryByDeviceIDAndSensorID(context.Context, string, string) ([]models.TelemetryReading, error)
 	GetTelemetryByDeviceIDWithDateFilter(context.Context, string, string, *time.Time, *time.Time) ([]models.TelemetryReading, error)
 	GetLatestTelemetryByDeviceID(context.Context, string) (models.TelemetryReading, error)
 }
@@ -27,8 +28,9 @@ type telemetryHandler struct {
 
 type telemetryResponse struct {
 	DeviceID    string             `json:"deviceId"`
-	Temperature float64            `json:"temperature"`
-	Humidity    float64            `json:"humidity"`
+	SensorID    string             `json:"sensorId,omitempty"`
+	Temperature *float64           `json:"temperature,omitempty"`
+	Humidity    *float64           `json:"humidity,omitempty"`
 	Sensors     map[string]float64 `json:"sensors,omitempty"`
 	CreatedAt   string             `json:"createdAt"`
 }
@@ -38,6 +40,7 @@ func RegisterTelemetryRoutes(api *gin.RouterGroup, logger *slog.Logger, service 
 
 	api.GET("/data", handler.getAllData)
 	api.GET("/data/:deviceId", handler.getDataByDeviceID)
+	api.GET("/data/:deviceId/:sensorId", handler.getDataByDeviceAndSensorID)
 	api.GET("/latest/:deviceId", handler.getLatestByDeviceID)
 }
 
@@ -121,6 +124,30 @@ func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 	context.JSON(http.StatusOK, toTelemetryResponses(readings))
 }
 
+func (handler *telemetryHandler) getDataByDeviceAndSensorID(context *gin.Context) {
+	deviceID := context.Param("deviceId")
+	sensorID := context.Param("sensorId")
+	requestContext, err := requestContextWithOrganizationScope(context)
+	if err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	readings, serviceErr := handler.service.GetTelemetryByDeviceIDAndSensorID(requestContext, deviceID, sensorID)
+	if serviceErr != nil {
+		handler.logger.Error("get telemetry by device and sensor failed", "deviceId", deviceID, "sensorId", sensorID, "error", serviceErr)
+		if errors.Is(serviceErr, services.ErrValidation) {
+			context.JSON(http.StatusBadRequest, gin.H{"error": serviceErr.Error()})
+			return
+		}
+
+		context.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch telemetry"})
+		return
+	}
+
+	context.JSON(http.StatusOK, toTelemetryResponses(readings))
+}
+
 func (handler *telemetryHandler) getLatestByDeviceID(context *gin.Context) {
 	deviceID := context.Param("deviceId")
 	requestContext, err := requestContextWithOrganizationScope(context)
@@ -160,12 +187,66 @@ func toTelemetryResponses(readings []models.TelemetryReading) []telemetryRespons
 
 func toTelemetryResponse(reading models.TelemetryReading) telemetryResponse {
 	createdAt := reading.CreatedAt.UTC().Format(time.RFC3339)
+	temperature, humidity := resolveTelemetryValues(reading)
 
 	return telemetryResponse{
 		DeviceID:    reading.DeviceID,
-		Temperature: reading.Temperature,
-		Humidity:    reading.Humidity,
+		SensorID:    reading.SensorID,
+		Temperature: temperature,
+		Humidity:    humidity,
 		Sensors:     reading.Sensors,
 		CreatedAt:   createdAt,
 	}
+}
+
+func resolveTelemetryValues(reading models.TelemetryReading) (*float64, *float64) {
+	if value, ok := telemetryValueForKeys(reading, "temperature", "dht11-temp"); ok {
+		return &value, telemetryHumidityValue(reading)
+	}
+
+	return nil, telemetryHumidityValue(reading)
+}
+
+func telemetryHumidityValue(reading models.TelemetryReading) *float64 {
+	if value, ok := telemetryValueForKeys(reading, "humidity", "humidity_dht11", "dht11-humidity"); ok {
+		return &value
+	}
+
+	return nil
+}
+
+func telemetryValueForKeys(reading models.TelemetryReading, keys ...string) (float64, bool) {
+	if len(reading.Sensors) > 0 {
+		for _, key := range keys {
+			if value, ok := reading.Sensors[key]; ok {
+				return value, true
+			}
+		}
+	}
+
+	for _, key := range keys {
+		if reading.SensorID != key {
+			continue
+		}
+
+		switch key {
+		case "temperature", "dht11-temp":
+			return reading.Temperature, true
+		case "humidity", "humidity_dht11", "dht11-humidity":
+			return reading.Humidity, true
+		}
+	}
+
+	if reading.SensorID == "" {
+		for _, key := range keys {
+			switch key {
+			case "temperature":
+				return reading.Temperature, true
+			case "humidity":
+				return reading.Humidity, true
+			}
+		}
+	}
+
+	return 0, false
 }
