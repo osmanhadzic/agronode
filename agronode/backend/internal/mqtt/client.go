@@ -215,6 +215,23 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 		Meta:            payload.Meta,
 	}
 
+	if client.registrar != nil {
+		// Use a non-blocking registration check with caching to avoid repeated DB calls
+		// on every telemetry packet from the same device
+		go func(deviceID string, envelope TelemetryEnvelope) {
+			registrationContext := context.Background()
+			if client.defaultOrganizationID != 0 {
+				registrationContext = tenancy.WithOrganizationID(registrationContext, client.defaultOrganizationID)
+			}
+
+			if _, err := client.registrar.RegisterDevice(registrationContext, deviceID, "publisher", "", models.DeviceMetadata{}, "", "", nil); err != nil {
+				client.logger.Warn("device ensure registration from mqtt failed", "deviceId", deviceID, "error", err)
+			}
+		}(deviceID, envelope)
+			return
+		}
+	}
+
 	if client.consumer == nil {
 		client.logger.Warn("mqtt message dropped: no service consumer configured", "topic", message.Topic())
 		return

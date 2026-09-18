@@ -11,5 +11,5 @@ type Farm struct {
 }
 
 func (Farm) TableName() string {
-	return "farms"
+	return "asset_groups"
 }
