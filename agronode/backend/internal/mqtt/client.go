@@ -7,11 +7,13 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"agronode/backend/internal/models"
 	"agronode/backend/internal/tenancy"
 	paho "github.com/eclipse/paho.mqtt.golang"
+	"golang.org/x/sync/singleflight"
 )
 
 type DeviceMeta struct {
@@ -67,6 +69,10 @@ type Client struct {
 	registrar               DeviceRegistrar
 	defaultOrganizationID   uint
 	client                  paho.Client
+	registrationGroup       singleflight.Group
+	registrationMu          sync.RWMutex
+	registrationCache       map[string]time.Time
+	registrationCacheTTL    time.Duration
 }
 
 func NewClient(brokerURL, topic, activationTopicTemplate string, logger *slog.Logger, consumer TelemetryConsumer) *Client {
@@ -76,6 +82,8 @@ func NewClient(brokerURL, topic, activationTopicTemplate string, logger *slog.Lo
 		activationTopicTemplate: activationTopicTemplate,
 		logger:                  logger,
 		consumer:                consumer,
+		registrationCache:       make(map[string]time.Time),
+		registrationCacheTTL:    5 * time.Minute,
 	}
 }
 
@@ -158,6 +166,41 @@ func (client *Client) SetDefaultOrganizationID(organizationID uint) {
 	client.defaultOrganizationID = organizationID
 }
 
+func (client *Client) ensureDeviceRegistration(ctx context.Context, deviceID string) error {
+	// Check cache first
+	client.registrationMu.RLock()
+	cachedTime, exists := client.registrationCache[deviceID]
+	client.registrationMu.RUnlock()
+
+	if exists && time.Since(cachedTime) < client.registrationCacheTTL {
+		return nil
+	}
+
+	// Use singleflight to ensure only one registration attempt per device
+	_, err, _ := client.registrationGroup.Do(deviceID, func() (interface{}, error) {
+		registrationContext := ctx
+		if client.defaultOrganizationID != 0 {
+			registrationContext = tenancy.WithOrganizationID(registrationContext, client.defaultOrganizationID)
+		}
+
+		if _, err := client.registrar.RegisterDevice(registrationContext, deviceID, "publisher", "", models.DeviceMetadata{}, "", "", nil); err != nil {
+			return nil, err
+		}
+
+		// Update cache on successful registration
+		client.registrationMu.Lock()
+		if client.registrationCache == nil {
+			client.registrationCache = make(map[string]time.Time)
+		}
+		client.registrationCache[deviceID] = time.Now()
+		client.registrationMu.Unlock()
+
+		return nil, nil
+	})
+
+	return err
+}
+
 func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 	deviceID, err := extractDeviceIDFromTopic(message.Topic())
 	if err != nil {
@@ -213,6 +256,14 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 		Timestamp:       payload.Timestamp,
 		Sensors:         payload.Sensors,
 		Meta:            payload.Meta,
+	}
+
+	if client.registrar != nil {
+		// Ensure device is registered synchronously before processing telemetry
+		if err := client.ensureDeviceRegistration(context.Background(), deviceID); err != nil {
+			client.logger.Error("device registration failed, telemetry dropped", "deviceId", deviceID, "error", err)
+			return
+		}
 	}
 
 	if client.consumer == nil {

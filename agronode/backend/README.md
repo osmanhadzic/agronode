@@ -191,6 +191,28 @@ type SensorTrigger struct {
 }
 ```
 
+### Database naming (generic)
+
+Asset hierarchy is now database-generic (not agriculture-specific) while API JSON fields remain backward compatible.
+
+**Table mapping**
+
+- `farms` -> `asset_groups`
+- `fields` -> `asset_sections`
+- `zones` -> `asset_units`
+
+**Column mapping**
+
+- `asset_sections.farm_id` -> `asset_sections.asset_group_id`
+- `asset_units.field_id` -> `asset_units.asset_section_id`
+- `devices.zone_id` -> `devices.asset_unit_id`
+
+**Migration sequence**
+
+- `000019`: consolidated rename migration (tables, columns, indexes, constraints, sequences)
+
+This migration is idempotent and safe to run on mixed environments where old names may still exist.
+
 ---
 
 ## Configuration
