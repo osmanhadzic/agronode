@@ -226,6 +226,50 @@ func TestHandleMessage_ForwardsSensorID(t *testing.T) {
 	}
 }
 
+func TestHandleMessage_TelemetryAutoRegistersDevice(t *testing.T) {
+	t.Run("calls registrar before forwarding telemetry", func(t *testing.T) {
+		consumer := &telemetryConsumerStub{}
+		registrar := &deviceRegistrarStub{}
+		client := &Client{logger: testLogger(), consumer: consumer, registrar: registrar}
+
+		message := testMessage{
+			topic:   "agronode/Plastenik-1/status",
+			payload: []byte(`{"sensors":{"signal_strength":-68}}`),
+		}
+
+		client.handleMessage(nil, message)
+
+		if registrar.registerCalls != 1 {
+			t.Fatalf("expected 1 auto-register call, got %d", registrar.registerCalls)
+		}
+
+		if registrar.deviceID != "Plastenik-1" {
+			t.Fatalf("expected device id %q, got %q", "Plastenik-1", registrar.deviceID)
+		}
+
+		if consumer.handled != 1 {
+			t.Fatalf("expected telemetry handler to be called once, got %d", consumer.handled)
+		}
+	})
+
+	t.Run("does not forward when auto-register fails", func(t *testing.T) {
+		consumer := &telemetryConsumerStub{}
+		registrar := &deviceRegistrarStub{err: errors.New("db down")}
+		client := &Client{logger: testLogger(), consumer: consumer, registrar: registrar}
+
+		message := testMessage{
+			topic:   "agronode/Plastenik-1/status",
+			payload: []byte(`{"sensors":{"signal_strength":-68}}`),
+		}
+
+		client.handleMessage(nil, message)
+
+		if consumer.handled != 0 {
+			t.Fatalf("expected telemetry handler not to be called, got %d", consumer.handled)
+		}
+	})
+}
+
 func TestHandleMessage_RegisterTopic(t *testing.T) {
 	t.Run("calls registrar and does not forward telemetry", func(t *testing.T) {
 		consumer := &telemetryConsumerStub{}
