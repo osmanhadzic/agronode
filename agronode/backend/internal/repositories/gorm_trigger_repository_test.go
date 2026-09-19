@@ -26,7 +26,7 @@ func newTestTriggerDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			device_id TEXT NOT NULL UNIQUE,
 			organization_id INTEGER,
-			zone_id INTEGER,
+			asset_unit_id INTEGER,
 			device_type TEXT NOT NULL DEFAULT 'publisher',
 			status TEXT,
 			firmware_version TEXT,

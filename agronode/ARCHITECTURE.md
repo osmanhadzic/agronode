@@ -168,7 +168,20 @@ Core tables:
 - `sensor_data` - time-series telemetry readings
 - `sensor_triggers` - trigger configuration (min/max thresholds)
 - `users` - user accounts (future multi-tenant)
-- `organizations` - tenant/farm grouping
+- `organizations` - tenant grouping
+
+Generic asset hierarchy naming (DB layer):
+
+- `farms` -> `asset_groups`
+- `fields` -> `asset_sections`
+- `zones` -> `asset_units`
+- `asset_sections.farm_id` -> `asset_sections.asset_group_id`
+- `asset_units.field_id` -> `asset_units.asset_section_id`
+- `devices.zone_id` -> `devices.asset_unit_id`
+
+Migration sequence for this normalization:
+
+- `000019` - consolidated rename migration (tables, columns, indexes, constraints, sequences)
 
 Key schema features:
 - `sensor_data.sensor_id` tracks which sensor sent each reading
@@ -293,7 +306,7 @@ Activation payload:
 ### Phase 2 (Growth)
 - Horizontal backend scaling (load balancer)
 - Device authentication (API keys, certificates)
-- Multi-organizaion/farm support
+- Multi-organization asset hierarchy support
 - Advanced analytics
 
 ### Phase 3 (Production SaaS)
@@ -483,12 +496,12 @@ All services run via Docker Compose:
 - Single database
 
 ## Phase 2 (Growth)
-- Multiple MQTT topics per farm
+- Multiple MQTT topics per asset group
 - Device authentication
 - Horizontal backend scaling
 
 ## Phase 3 (Production SaaS)
-- Multi-tenant system (farms/users)
+- Multi-tenant system (asset groups/users)
 - Cloud deployment
 - Load balancer
 - Metrics + monitoring

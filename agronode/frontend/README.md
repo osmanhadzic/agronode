@@ -709,7 +709,7 @@ Login is handled by the backend with these default development credentials unles
 
 On first startup, the backend seeds these into the `users` table as a hashed bootstrap account.
 
-It also seeds demo data for `organizations`, `farms`, `fields`, `zones`, and a couple of `devices`.
+It also seeds demo data for `organizations`, `asset_groups`, `asset_sections`, `asset_units`, and a couple of `devices`.
 Additional seeded user:
 
 - email: `operator@agronode.local`
