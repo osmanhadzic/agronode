@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.AuthService, telemetryService handlers.TelemetryQueryService, triggerService handlers.TriggerService, deviceService handlers.DeviceRegistrationService, realtimeHub *realtime.Hub) *gin.Engine {
+func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.AuthService, telemetryService handlers.TelemetryQueryService, streamControlService handlers.DeviceStreamControlService, triggerService handlers.TriggerService, deviceService handlers.DeviceRegistrationService, realtimeHub *realtime.Hub) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), gin.Logger())
 	router.Use(corsMiddleware())
@@ -23,6 +23,7 @@ func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.A
 	api := router.Group("/api")
 	handlers.RegisterTelemetryRoutes(api, logger, telemetryService)
 	handlers.RegisterDeviceRoutes(api, logger, deviceService)
+	handlers.RegisterDeviceStreamRoutes(api, logger, streamControlService)
 	handlers.RegisterTriggerRoutes(api, logger, triggerService)
 	handlers.RegisterRealtimeRoutes(router, logger, realtimeHub)
 

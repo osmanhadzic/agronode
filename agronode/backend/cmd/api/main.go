@@ -76,6 +76,7 @@ func main() {
 	mqttClient.SetDeviceRegistrar(deviceService)
 	mqttClient.SetDefaultOrganizationID(cfg.FrontendOrganizationID)
 	telemetryService.SetTriggerPublisher(mqttClient)
+	streamControlService := services.NewDeviceStreamControlService(logger, mqttClient)
 	mqttErrorChannel := make(chan error, 1)
 
 	go func() {
@@ -84,7 +85,7 @@ func main() {
 		}
 	}()
 
-	router := server.NewRouter(logger, cfg.SessionSecret, authService, telemetryService, telemetryService, deviceService, realtimeHub)
+	router := server.NewRouter(logger, cfg.SessionSecret, authService, telemetryService, streamControlService, telemetryService, deviceService, realtimeHub)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.AppPort,
 		Handler:           router,

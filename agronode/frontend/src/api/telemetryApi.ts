@@ -9,6 +9,15 @@ export interface DateFilterOptions {
   startDate?: string
   endDate?: string
 }
+
+export type StreamControlAction = 'pause' | 'resume'
+
+export interface StreamControlResponse {
+  deviceId: string
+  sensorId: string
+  action: StreamControlAction
+  streaming: boolean
+}
 import type {
   DeviceSensor,
   SensorTrigger,
@@ -134,4 +143,17 @@ export async function deleteSensorTriggerByDeviceId(
 ): Promise<void> {
   const encodedSensor = encodeURIComponent(sensorId)
   await httpClient.delete(`/api/triggers/${deviceId}/${encodedSensor}`)
+}
+
+export async function sendDeviceStreamControl(
+  deviceId: string,
+  action: StreamControlAction,
+  sensorId?: string,
+): Promise<StreamControlResponse> {
+  const { data } = await httpClient.post<StreamControlResponse>(
+    `/api/devices/${deviceId}/stream-control`,
+    { action, sensorId },
+  )
+
+  return data
 }
