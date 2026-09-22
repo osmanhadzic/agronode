@@ -1,24 +1,57 @@
 services:
-  emqx:
-    image: emqx/emqx:latest
-    container_name: agronode-emqx
+  vernemq:
+    image: vernemq/vernemq:1.12.3
+    container_name: agronode-vernemq
     restart: unless-stopped
     environment:
-      # EMQX Dashboard
-      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USERNAME:-admin}
-      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-public}
+      DOCKER_VERNEMQ_ACCEPT_EULA: "yes"
+      DOCKER_VERNEMQ_ALLOW_ANONYMOUS: "on"
+      DOCKER_VERNEMQ_LISTENER__TCP__DEFAULT: "0.0.0.0:1883"
+      DOCKER_VERNEMQ_PLUGINS__VMQ_PASSWD: "off"
+      DOCKER_VERNEMQ_PLUGINS__VMQ_ACL: "on"
     ports:
       # MQTT
       - "1883:1883"
-
-      # MQTT over WebSocket
-      - "8083:8083"
-
-      # EMQX Dashboard
-      - "18083:18083"
     volumes:
-      - emqx-data:/opt/emqx/data
-      - emqx-log:/opt/emqx/log
+      - vernemq-data:/vernemq/data
+      - ./infra/vernemq/vmq.acl:/vernemq/etc/vmq.acl:ro
+    networks:
+      - agronode-net
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: agronode-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - vernemq
+    networks:
+      - agronode-net
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: agronode-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
     networks:
       - agronode-net
 
@@ -60,15 +93,15 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-agronode}
 
-      # EMQX
-      MQTT_BROKER: ${MQTT_BROKER:-tcp://emqx:1883}
+      # VerneMQ
+      MQTT_BROKER: ${MQTT_BROKER:-tcp://vernemq:1883}
       MQTT_TOPIC: ${MQTT_TOPIC:-agronode/#}
       MQTT_ACTIVATION_TOPIC_TEMPLATE: ${MQTT_ACTIVATION_TOPIC_TEMPLATE:-agronode/%s/activation}
 
     ports:
       - "8080:8080"
     depends_on:
-      - emqx
+      - vernemq
       - postgres
     networks:
       - agronode-net
@@ -96,9 +129,8 @@ services:
       DEVICE_ID: ${DEMO_DEVICE_ID:-demo-device-1}
       PUBLISH_INTERVAL_SECONDS: ${DEMO_PUBLISH_INTERVAL_SECONDS:-15}
 
-      # IMPORTANT:
-      # demo device now connects to EMQX
-      MQTT_HOST: ${DEMO_MQTT_HOST:-emqx}
+      # demo device connects to VerneMQ
+      MQTT_HOST: ${DEMO_MQTT_HOST:-vernemq}
       MQTT_PORT: ${DEMO_MQTT_PORT:-1883}
 
     volumes:
@@ -109,7 +141,7 @@ services:
       - /demo/publisher.sh
 
     depends_on:
-      - emqx
+      - vernemq
 
     networks:
       - agronode-net
@@ -120,5 +152,6 @@ networks:
 
 volumes:
   postgres-data:
-  emqx-data:
-  emqx-log:
+  vernemq-data:
+  prometheus-data:
+  grafana-data:
