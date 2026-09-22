@@ -31,6 +31,9 @@ PubSubClient mqttClient(wifiClient);
 
 unsigned long lastPublishMs = 0;
 unsigned long activationSignalUntilMs = 0;
+bool telemetryPublishingEnabled = true;
+bool temperaturePublishingEnabled = true;
+bool humidityPublishingEnabled = true;
 char topicBuffer[128];
 char statusTopicBuffer[128];
 char activationTopicBuffer[128];
@@ -46,6 +49,8 @@ void handleActivationPayload(const String& payload);
 void onMqttMessage(char* topic, byte* payload, unsigned int length);
 bool payloadHasDeviceId(const String& payload, const char* expectedDeviceId);
 bool payloadHasBooleanField(const String& payload, const char* fieldName, bool expectedValue);
+bool payloadHasStringField(const String& payload, const char* fieldName, const char* expectedValue);
+String payloadStringFieldValue(const String& payload, const char* fieldName);
 bool publishDeviceStatus(bool online, unsigned long epochSeconds);
 
 void setup() {
@@ -173,6 +178,75 @@ void handleActivationPayload(const String& payload) {
     return;
   }
 
+  String sensorTarget = payloadStringFieldValue(payload, "sensor");
+  sensorTarget.trim();
+  if (sensorTarget.length() == 0) {
+    sensorTarget = "all";
+  }
+
+  bool isGlobalTarget =
+    sensorTarget.equalsIgnoreCase("all") ||
+    sensorTarget.equalsIgnoreCase("telemetry");
+  bool isTemperatureTarget =
+    sensorTarget.equalsIgnoreCase(TEMPERATURE_SENSOR_ID) ||
+    sensorTarget.equalsIgnoreCase("temperature");
+  bool isHumidityTarget =
+    sensorTarget.equalsIgnoreCase(HUMIDITY_SENSOR_ID) ||
+    sensorTarget.equalsIgnoreCase("humidity") ||
+    sensorTarget.equalsIgnoreCase("humidity_dht11");
+
+  if (payloadHasStringField(payload, "trigger", "stream_pause")) {
+    if (isGlobalTarget) {
+      telemetryPublishingEnabled = false;
+      temperaturePublishingEnabled = false;
+      humidityPublishingEnabled = false;
+      Serial.println("Telemetry publishing paused (all sensors)");
+      return;
+    }
+
+    if (isTemperatureTarget) {
+      temperaturePublishingEnabled = false;
+      Serial.println("Telemetry publishing paused (temperature)");
+      return;
+    }
+
+    if (isHumidityTarget) {
+      humidityPublishingEnabled = false;
+      Serial.println("Telemetry publishing paused (humidity)");
+      return;
+    }
+
+    Serial.print("Telemetry pause ignored for unknown sensor target: ");
+    Serial.println(sensorTarget);
+    return;
+  }
+
+  if (payloadHasStringField(payload, "trigger", "stream_resume")) {
+    if (isGlobalTarget) {
+      telemetryPublishingEnabled = true;
+      temperaturePublishingEnabled = true;
+      humidityPublishingEnabled = true;
+      Serial.println("Telemetry publishing resumed (all sensors)");
+      return;
+    }
+
+    if (isTemperatureTarget) {
+      temperaturePublishingEnabled = true;
+      Serial.println("Telemetry publishing resumed (temperature)");
+      return;
+    }
+
+    if (isHumidityTarget) {
+      humidityPublishingEnabled = true;
+      Serial.println("Telemetry publishing resumed (humidity)");
+      return;
+    }
+
+    Serial.print("Telemetry resume ignored for unknown sensor target: ");
+    Serial.println(sensorTarget);
+    return;
+  }
+
   bool activated = payloadHasBooleanField(payload, "activated", true);
   if (activated) {
     activationSignalUntilMs = millis() + ACTIVATION_SIGNAL_DURATION_MS;
@@ -219,6 +293,38 @@ bool payloadHasBooleanField(const String& payload, const char* fieldName, bool e
   }
 
   return payload.startsWith("false", valueIndex);
+}
+
+bool payloadHasStringField(const String& payload, const char* fieldName, const char* expectedValue) {
+  String compactPattern = String("\"") + fieldName + "\":\"" + expectedValue + "\"";
+  String spacedPattern = String("\"") + fieldName + "\": \"" + expectedValue + "\"";
+
+  return payload.indexOf(compactPattern) >= 0 || payload.indexOf(spacedPattern) >= 0;
+}
+
+String payloadStringFieldValue(const String& payload, const char* fieldName) {
+  String keyPattern = String("\"") + fieldName + "\"";
+  int keyIndex = payload.indexOf(keyPattern);
+  if (keyIndex < 0) {
+    return "";
+  }
+
+  int colonIndex = payload.indexOf(':', keyIndex + keyPattern.length());
+  if (colonIndex < 0) {
+    return "";
+  }
+
+  int quoteStart = payload.indexOf('"', colonIndex + 1);
+  if (quoteStart < 0) {
+    return "";
+  }
+
+  int quoteEnd = payload.indexOf('"', quoteStart + 1);
+  if (quoteEnd < 0) {
+    return "";
+  }
+
+  return payload.substring(quoteStart + 1, quoteEnd);
 }
 
 bool publishSensorTelemetry(const char* sensorID, float sensorValue, unsigned long epochSeconds) {
@@ -363,6 +469,17 @@ void loop() {
 
   lastPublishMs = nowMs;
 
+  unsigned long epochSeconds = currentEpochSeconds();
+  if (!telemetryPublishingEnabled || (!temperaturePublishingEnabled && !humidityPublishingEnabled)) {
+    bool statusPublished = publishDeviceStatus(true, epochSeconds);
+    if (!statusPublished) {
+      Serial.println("Status publish failed while telemetry paused");
+    }
+
+    delay(100);
+    return;
+  }
+
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
 
@@ -378,11 +495,18 @@ void loop() {
   Serial.print("Humidity: ");
   Serial.println(humidity);
 
-  unsigned long epochSeconds = currentEpochSeconds();
-  bool temperaturePublished = publishSensorTelemetry(TEMPERATURE_SENSOR_ID, temperature, epochSeconds);
-  delay(40);
-  bool humidityPublished = publishSensorTelemetry(HUMIDITY_SENSOR_ID, humidity, epochSeconds);
-  delay(40);
+  bool temperaturePublished = true;
+  if (temperaturePublishingEnabled) {
+    temperaturePublished = publishSensorTelemetry(TEMPERATURE_SENSOR_ID, temperature, epochSeconds);
+    delay(40);
+  }
+
+  bool humidityPublished = true;
+  if (humidityPublishingEnabled) {
+    humidityPublished = publishSensorTelemetry(HUMIDITY_SENSOR_ID, humidity, epochSeconds);
+    delay(40);
+  }
+
   bool statusPublished = publishDeviceStatus(true, epochSeconds);
 
   if (!temperaturePublished || !humidityPublished || !statusPublished) {

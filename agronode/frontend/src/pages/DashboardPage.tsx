@@ -11,6 +11,7 @@ import {
   fetchTriggersByDeviceId,
   fetchLatestTelemetryByDeviceId,
   saveSensorTriggerByDeviceId,
+  sendDeviceStreamControl,
   type DateFilterPeriod,
 } from '../api/telemetryApi'
 import { createDeviceStatusSocket, createTelemetrySocket } from '../api/telemetrySocket'
@@ -112,6 +113,11 @@ export function DashboardPage() {
   const [customEndDate, setCustomEndDate] = useState<string>()
   const [selectedTelemetrySensor, setSelectedTelemetrySensor] = useState('all')
   const [updateQueue, setUpdateQueue] = useState<TelemetryReading[]>([])
+  const [streamingByDevice, setStreamingByDevice] = useState<Record<string, boolean>>({})
+  const [streamingBySensor, setStreamingBySensor] = useState<Record<string, boolean>>({})
+  const [isSendingStreamCommand, setIsSendingStreamCommand] = useState(false)
+  const [sendingSensorId, setSendingSensorId] = useState('')
+  const [streamControlError, setStreamControlError] = useState('')
 
   // Batch websocket messages to avoid excessive UI updates.
   useEffect(() => {
@@ -670,6 +676,10 @@ export function DashboardPage() {
     ? deviceStatuses[selectedDeviceId] ?? 'unknown'
     : 'unknown'
 
+  const isSelectedDeviceStreaming = selectedDeviceId
+    ? (streamingByDevice[selectedDeviceId] ?? true)
+    : true
+
   const availableSensors = useMemo(() => {
     const sensorSet = new Set<string>()
 
@@ -1051,12 +1061,80 @@ export function DashboardPage() {
 
   const handleSelectDevice = (deviceId: string) => {
     setSelectedDeviceId(deviceId)
+    setStreamControlError('')
     setSelectedTelemetrySensor('all')
     setActiveTab('sensors')
     triggerActivationState.current = {}
     setActiveTriggerEvent(null)
     setTriggerEvents([])
     setToastTriggerEvent(null)
+  }
+
+  const handleToggleDeviceStream = async () => {
+    if (!selectedDeviceId) {
+      return
+    }
+
+    const action = isSelectedDeviceStreaming ? 'pause' : 'resume'
+    setIsSendingStreamCommand(true)
+    setStreamControlError('')
+
+    try {
+      const response = await sendDeviceStreamControl(selectedDeviceId, action, 'all')
+      setStreamingByDevice((previous) => ({
+        ...previous,
+        [selectedDeviceId]: response.streaming,
+      }))
+      setStreamingBySensor((previous) => {
+        const next = { ...previous }
+        for (const sensorId of sensorCatalog) {
+          next[`${selectedDeviceId}:${sensorId}`] = response.streaming
+        }
+
+        return next
+      })
+    } catch {
+      setStreamControlError('Failed to send stream control command')
+    } finally {
+      setIsSendingStreamCommand(false)
+    }
+  }
+
+  const isSensorStreaming = (sensorId: string): boolean => {
+    if (!selectedDeviceId) {
+      return true
+    }
+
+    const key = `${selectedDeviceId}:${sensorId}`
+    if (key in streamingBySensor) {
+      return streamingBySensor[key]
+    }
+
+    return isSelectedDeviceStreaming
+  }
+
+  const handleToggleSensorStream = async (sensorId: string) => {
+    if (!selectedDeviceId) {
+      return
+    }
+
+    const currentlyStreaming = isSensorStreaming(sensorId)
+    const action = currentlyStreaming ? 'pause' : 'resume'
+    setSendingSensorId(sensorId)
+    setStreamControlError('')
+
+    try {
+      const response = await sendDeviceStreamControl(selectedDeviceId, action, sensorId)
+      const key = `${selectedDeviceId}:${response.sensorId}`
+      setStreamingBySensor((previous) => ({
+        ...previous,
+        [key]: response.streaming,
+      }))
+    } catch {
+      setStreamControlError(`Failed to send stream control for sensor ${sensorId}`)
+    } finally {
+      setSendingSensorId('')
+    }
   }
 
   const handleOpenSensorTelemetry = (sensorId: string) => {
@@ -1135,6 +1213,21 @@ export function DashboardPage() {
 
           <button
             type="button"
+            className={`dashboard-logout-button dashboard-stream-button ${isSelectedDeviceStreaming ? 'dashboard-stream-button-stop' : 'dashboard-stream-button-start'}`}
+            onClick={() => {
+              void handleToggleDeviceStream()
+            }}
+            disabled={!selectedDeviceId || isSendingStreamCommand}
+          >
+            {isSendingStreamCommand
+              ? 'Sending...'
+              : isSelectedDeviceStreaming
+                ? 'Stop MQTT'
+                : 'Start MQTT'}
+          </button>
+
+          <button
+            type="button"
             className="dashboard-logout-button"
             onClick={() => clearSession()}
           >
@@ -1142,6 +1235,8 @@ export function DashboardPage() {
           </button>
         </div>
       </header>
+
+      {streamControlError && <p className="dashboard-message">{streamControlError}</p>}
 
       <nav className="dashboard-tabs" role="tablist" aria-label="Dashboard sections">
         {dashboardTabs.map((tab) => (
@@ -1337,6 +1432,19 @@ export function DashboardPage() {
                           onClick={() => handleConfigureSensorTrigger(sensorId)}
                         >
                           Trigger
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleToggleSensorStream(sensorId)
+                          }}
+                          disabled={sendingSensorId === sensorId}
+                        >
+                          {sendingSensorId === sensorId
+                            ? 'Sending...'
+                            : isSensorStreaming(sensorId)
+                              ? 'Stop data'
+                              : 'Start data'}
                         </button>
                       </td>
                     </tr>
