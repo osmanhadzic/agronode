@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"agronode/backend/internal/auth"
+	"agronode/backend/internal/models"
 	"agronode/backend/internal/tenancy"
 	"github.com/gin-gonic/gin"
 )
@@ -18,7 +19,12 @@ func sessionAuthMiddleware(sessionSecret string) gin.HandlerFunc {
 			return
 		}
 
-		context.Request = context.Request.WithContext(tenancy.WithOrganizationID(context.Request.Context(), claims.OrganizationID))
+		requestContext := tenancy.WithUserRole(context.Request.Context(), claims.Role)
+		if claims.Role != models.UserRoleAdmin {
+			requestContext = tenancy.WithOrganizationID(requestContext, claims.OrganizationID)
+		}
+
+		context.Request = context.Request.WithContext(requestContext)
 		context.Set("sessionEmail", claims.Email)
 		context.Next()
 	}

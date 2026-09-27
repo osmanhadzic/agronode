@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"agronode/backend/internal/auth"
+	"agronode/backend/internal/models"
 	"agronode/backend/internal/repositories"
 )
 
@@ -40,6 +41,7 @@ func (service *AuthLoginService) Login(email, password string, now time.Time) (a
 	claims := auth.SessionClaims{
 		Email:          user.Email,
 		OrganizationID: user.OrganizationID,
+		Role:           models.NormalizeUserRole(user.Role),
 		IssuedAt:       now.UTC().Unix(),
 		ExpiresAt:      now.UTC().Add(service.session.TTL).Unix(),
 	}

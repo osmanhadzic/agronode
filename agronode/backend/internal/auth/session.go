@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"agronode/backend/internal/models"
 )
 
 var (
@@ -21,6 +23,7 @@ var (
 type SessionClaims struct {
 	Email          string `json:"email"`
 	OrganizationID uint   `json:"organizationId"`
+	Role           string `json:"role"`
 	IssuedAt       int64  `json:"iat"`
 	ExpiresAt      int64  `json:"exp"`
 }
@@ -45,7 +48,7 @@ func SignSessionToken(secret string, claims SessionClaims) (string, error) {
 		return "", errors.New("session secret is required")
 	}
 
-	if claims.Email == "" || claims.OrganizationID == 0 || claims.ExpiresAt <= 0 {
+	if claims.Email == "" || claims.OrganizationID == 0 || claims.ExpiresAt <= 0 || !models.IsSupportedUserRole(claims.Role) {
 		return "", ErrInvalidToken
 	}
 
@@ -80,7 +83,12 @@ func ValidateSessionToken(secret, token string, now time.Time) (SessionClaims, e
 		return SessionClaims{}, ErrInvalidToken
 	}
 
-	if claims.Email == "" || claims.OrganizationID == 0 || claims.ExpiresAt <= 0 {
+	if claims.Role == "" {
+		claims.Role = models.UserRoleOrganization
+	}
+	claims.Role = models.NormalizeUserRole(claims.Role)
+
+	if claims.Email == "" || claims.OrganizationID == 0 || claims.ExpiresAt <= 0 || !models.IsSupportedUserRole(claims.Role) {
 		return SessionClaims{}, ErrInvalidToken
 	}
 

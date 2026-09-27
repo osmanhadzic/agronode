@@ -2,7 +2,10 @@
 
 Base URL: `http://localhost:8080`
 
-Organization scoping: All endpoints require `X-Organization-ID` header for multi-tenant support.
+Organization scoping:
+
+- `admin` role can access all organizations and devices. Optional `X-Organization-ID` (or `organizationId` query) can scope requests to one organization.
+- `organization` role is automatically scoped to its own organization.
 
 ---
 
@@ -17,6 +20,35 @@ Response:
   "status": "ok"
 }
 ```
+
+---
+
+## Organizations
+
+### GET /api/organizations
+
+Returns organizations visible to the authenticated user.
+
+- `admin`: returns all organizations
+- `organization`: returns only your organization
+
+Response: `200 OK`
+
+```json
+[
+  {
+    "id": 1,
+    "name": "AgroNode",
+    "slug": "default",
+    "createdAt": "2026-06-01T11:00:00Z",
+    "updatedAt": "2026-06-01T11:00:00Z"
+  }
+]
+```
+
+Possible errors:
+
+- `500` for server errors
 
 ---
 
@@ -546,8 +578,14 @@ Messages sent from server:
 All requests should include:
 
 ```
-X-Organization-ID: <organization_id>
+Authorization: Bearer <session_token>
 Content-Type: application/json
+```
+
+Optional for admin role:
+
+```
+X-Organization-ID: <organization_id>
 ```
 
 ---

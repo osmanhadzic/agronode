@@ -50,6 +50,7 @@ func main() {
 	telemetryRepository := repositories.NewGormTelemetryRepository(store.DB)
 	sensorRepository := repositories.NewGormSensorRepository(store.DB)
 	triggerRepository := repositories.NewGormTriggerRepository(store.DB)
+	organizationRepository := repositories.NewGormOrganizationRepository(store.DB)
 	userRepository := repositories.NewGormUserRepository(store.DB)
 	if err := services.EnsureBootstrapAuthData(startupContext, store.DB, cfg, logger); err != nil {
 		logger.Error("bootstrap auth data failed", "error", err)
@@ -59,6 +60,7 @@ func main() {
 	telemetryService := services.NewTelemetryService(telemetryRepository, logger)
 	deviceRepository := repositories.NewGormDeviceRepository(store.DB)
 	deviceService := services.NewDeviceService(deviceRepository, logger)
+	organizationService := services.NewOrganizationService(organizationRepository)
 	deviceService.SetSensorRepository(sensorRepository)
 	telemetryService.SetTriggerRepository(triggerRepository)
 	telemetryService.SetSensorRepository(sensorRepository)
@@ -85,7 +87,7 @@ func main() {
 		}
 	}()
 
-	router := server.NewRouter(logger, cfg.SessionSecret, authService, telemetryService, streamControlService, telemetryService, deviceService, realtimeHub)
+	router := server.NewRouter(logger, cfg.SessionSecret, authService, telemetryService, streamControlService, telemetryService, deviceService, organizationService, realtimeHub)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.AppPort,
 		Handler:           router,
