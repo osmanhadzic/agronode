@@ -115,9 +115,9 @@ export function TelemetryLineChart({ data, selectedSensors }: TelemetryLineChart
 
   return (
     <div className="chart-panel">
-      <h2 className="chart-title">Live Telemetry</h2>
+      <h2 className="chart-title">Telemetrija uživo</h2>
       {selectedSensors.length === 0 ? (
-        <p className="dashboard-message">No measurement selected.</p>
+        <p className="dashboard-message">Nijedan senzor nije odabran.</p>
       ) : (
         <div className="chart-grid">
           {selectedSensors.map((sensorKey, index) => (

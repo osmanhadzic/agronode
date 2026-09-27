@@ -3,8 +3,8 @@ import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 
 import { clearSession, loadSession, onSessionChange } from './api/session'
 import { AdminDashboardPage } from './pages/AdminDashboardPage'
-import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
+import { OrganizationDashboardPage } from './pages/OrganizationDashboardPage'
 import './App.css'
 
 function isAllowedRole(role: string): role is 'admin' | 'organization' {
@@ -59,7 +59,7 @@ function App() {
       </Route>
 
       <Route element={<ProtectedRoute role={role} allowedRoles={['organization']} />}>
-        <Route path="/org" element={<DashboardPage />} />
+        <Route path="/org" element={<OrganizationDashboardPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to={defaultAuthenticatedPath} replace />} />

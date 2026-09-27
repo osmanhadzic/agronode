@@ -95,7 +95,11 @@ function downsampleData(
   return sampled
 }
 
-export function DashboardPage() {
+type DashboardPageProps = {
+  title?: string
+}
+
+export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPageProps) {
   const session = loadSession()
   const sessionRole = session?.role
   const sessionOrganizationId = session?.organizationId
@@ -1248,7 +1252,7 @@ export function DashboardPage() {
 
       <header className="dashboard-header">
         <div>
-          <h1 className="dashboard-title">AgroNode Dashboard</h1>
+          <h1 className="dashboard-title">{title}</h1>
 
           {selectedDeviceId && (
             <p className="device-status">
@@ -1263,8 +1267,8 @@ export function DashboardPage() {
 
           {session && (
             <p className="dashboard-session">
-              Signed in as <strong>{session.email}</strong> · Role{' '}
-              <strong>{session.role}</strong>
+              Prijavljen: <strong>{session.email}</strong> ·
+              <span className={`dashboard-role-badge dashboard-role-${session.role}`}>{session.role}</span>
               {session.role === 'organization' ? ` · Org ${session.organizationId}` : ''}
               {session.role === 'admin' && activeOrganizationScope
                 ? ` · Scope Org ${activeOrganizationScope}`
@@ -1428,7 +1432,7 @@ export function DashboardPage() {
 
           {dataMode === 'live' && (
             <div className="dashboard-banner dashboard-banner-live">
-              📡 Prikazano: Poslednji sat podataka u realnom vremenu
+              Prikazano: posljednji sat podataka u realnom vremenu
             </div>
           )}
 
@@ -1442,7 +1446,7 @@ export function DashboardPage() {
 
             return isDownsampled ? (
               <div className="dashboard-banner dashboard-banner-warning">
-                📊 Prikazano: {deviceTelemetry.length} od {originalData.length} podataka (optimizovano za performanse)
+                Prikazano: {deviceTelemetry.length} od {originalData.length} podataka (optimizovano za performanse)
               </div>
             ) : null
           })()}

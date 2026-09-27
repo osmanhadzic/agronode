@@ -24,7 +24,7 @@ export const DeviceSelector = memo(function DeviceSelector({
 
   return (
     <div className="device-selector">
-      <label htmlFor="device-select">Device</label>
+      <label htmlFor="device-select">Uređaj</label>
       <select
         id="device-select"
         value={selectedDeviceId}

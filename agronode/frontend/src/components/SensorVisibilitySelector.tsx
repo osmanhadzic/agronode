@@ -28,7 +28,7 @@ export const SensorVisibilitySelector = memo(function SensorVisibilitySelector({
 
   return (
     <section className="sensor-visibility-panel">
-      <h2 className="sensor-visibility-title">Choose data to display</h2>
+      <h2 className="sensor-visibility-title">Prikaz senzora</h2>
       <div className="sensor-visibility-list">
         {sensors.map((sensorKey) => {
           const checked = selectedSensors.includes(sensorKey)
