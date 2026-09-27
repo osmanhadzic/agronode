@@ -693,29 +693,44 @@ npm run dev
 
 Default URL: `http://localhost:5173`
 
+## Login & role routing
+
+Frontend uses backend auth endpoint `POST /api/auth/login` and routes users by role after successful sign-in:
+
+- `admin` -> `/admin`
+- `organization` -> `/org`
+
+Default backend bootstrap admin credentials (first startup, only when `users` table is empty):
+
+- email: `admin@agronode.local`
+- password: `admin123`
+
+Separate organization user is **not auto-seeded**. Create one manually in `users` with role `organization`.
+
+Example organization login (after manual create):
+
+- email: `organization@agronode.local`
+- password: `organization123`
+- route after login: `/org`
+
+To override defaults in backend runtime:
+
+- `FRONTEND_LOGIN_EMAIL`
+- `FRONTEND_LOGIN_PASSWORD`
+
+Optional frontend helper for prefilled login email:
+
+- `VITE_DEFAULT_LOGIN_EMAIL`
+
 ## Environment
 
 Optional:
 
 - `VITE_API_BASE_URL` (example: `http://localhost:8080`)
 
-Backend runtime variables:
-
-
-Login is handled by the backend with these default development credentials unless overridden by environment variables:
-
-- email: `admin@agronode.local`
-- password: `admin123`
-
-On first startup, the backend seeds these into the `users` table as a hashed bootstrap account.
-
-It also seeds demo data for `organizations`, `asset_groups`, `asset_sections`, `asset_units`, and a couple of `devices`.
-Additional seeded user:
-
-- email: `operator@agronode.local`
-- password: `operator123`
-
 If not set, frontend defaults to backend at `http://<host>:8080` and WebSocket at `ws://<host>:8080/ws/telemetry`.
+
+Backend runtime variables:
 
 ## API dependencies
 

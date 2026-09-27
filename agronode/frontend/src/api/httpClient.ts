@@ -1,6 +1,6 @@
 import axios, { AxiosHeaders } from 'axios'
 
-import { clearSession, getSessionToken } from './session'
+import { clearSession, getSessionToken, loadOrganizationScope } from './session'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
 
@@ -15,6 +15,11 @@ httpClient.interceptors.request.use((config) => {
   const token = getSessionToken()
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  const organizationScope = loadOrganizationScope()
+  if (organizationScope !== null) {
+    headers.set('X-Organization-ID', String(organizationScope))
   }
 
   config.headers = headers

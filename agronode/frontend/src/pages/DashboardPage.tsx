@@ -14,6 +14,7 @@ import {
   sendDeviceStreamControl,
   type DateFilterPeriod,
 } from '../api/telemetryApi'
+import { fetchOrganizations } from '../api/organizationApi'
 import { createDeviceStatusSocket, createTelemetrySocket } from '../api/telemetrySocket'
 import { DateFilter } from '../components/DateFilter'
 import { DataModeSelector } from '../components/DataModeSelector'
@@ -21,7 +22,8 @@ import { DeviceMetaPanel } from '../components/DeviceMetaPanel'
 import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
 import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector'
-import { clearSession, loadSession } from '../api/session'
+import { clearSession, loadOrganizationScope, loadSession, saveOrganizationScope } from '../api/session'
+import type { OrganizationSummary } from '../types/organization'
 import type { TelemetryReading, TriggerListItem, DeviceSensor } from '../types/telemetry'
 
 type TriggerEvent = {
@@ -94,6 +96,14 @@ function downsampleData(
 }
 
 export function DashboardPage() {
+  const session = loadSession()
+  const sessionRole = session?.role
+  const sessionOrganizationId = session?.organizationId
+  const isAdmin = sessionRole === 'admin'
+  const [organizations, setOrganizations] = useState<OrganizationSummary[]>([])
+  const [selectedOrganizationScope, setSelectedOrganizationScope] = useState<number | null>(() => loadOrganizationScope())
+  const activeOrganizationScope = isAdmin ? selectedOrganizationScope ?? undefined : sessionOrganizationId
+
   const [telemetry, setTelemetry] = useState<TelemetryReading[]>([])
   const [liveData, setLiveData] = useState<TelemetryReading[]>([])
   const [liveSensorSnapshots, setLiveSensorSnapshots] = useState<Record<string, Record<string, number>>>({})
@@ -178,13 +188,57 @@ export function DashboardPage() {
   const deviceSensorIdsRef = useRef<Set<string>>(new Set())
   const triggerMapRef = useRef<Record<string, TriggerListItem>>({})
   const toastTimerRef = useRef<number | null>(null)
-  const session = loadSession()
   const dashboardTabs = [
     { id: 'overview', label: 'Pregled' },
     { id: 'telemetry', label: 'Telemetrija' },
     { id: 'sensors', label: 'Senzori' },
     { id: 'triggers', label: 'Triggeri' },
   ] as const
+
+  useEffect(() => {
+    if (!session) {
+      return
+    }
+
+    if (sessionRole === 'organization' && sessionOrganizationId) {
+      if (loadOrganizationScope() !== sessionOrganizationId) {
+        saveOrganizationScope(sessionOrganizationId)
+      }
+      setSelectedOrganizationScope(sessionOrganizationId)
+      return
+    }
+
+    let isMounted = true
+
+    async function loadOrganizations() {
+      try {
+        const organizationItems = await fetchOrganizations()
+        if (!isMounted) {
+          return
+        }
+
+        setOrganizations(organizationItems)
+
+        if (
+          selectedOrganizationScope !== null &&
+          !organizationItems.some((organization) => organization.id === selectedOrganizationScope)
+        ) {
+          setSelectedOrganizationScope(null)
+          saveOrganizationScope(null)
+        }
+      } catch {
+        if (isMounted) {
+          setOrganizations([])
+        }
+      }
+    }
+
+    void loadOrganizations()
+
+    return () => {
+      isMounted = false
+    }
+  }, [sessionRole, sessionOrganizationId, selectedOrganizationScope])
 
   const getReadingSensorValues = useCallback((reading: TelemetryReading): Record<string, number> => {
     const readingSensors = reading.sensors ?? {}
@@ -530,6 +584,7 @@ export function DashboardPage() {
     void loadTelemetry()
 
     const cleanupSocket = createTelemetrySocket(
+      activeOrganizationScope,
       (reading) => {
         if (!isMounted) {
           return
@@ -582,6 +637,7 @@ export function DashboardPage() {
     )
 
     const cleanupDeviceStatusSocket = createDeviceStatusSocket(
+      activeOrganizationScope,
       (event) => {
         if (!isMounted) {
           return
@@ -606,6 +662,7 @@ export function DashboardPage() {
       cleanupDeviceStatusSocket()
     }
   }, [
+    activeOrganizationScope,
     selectedDeviceId,
     selectedTelemetrySensor,
     dataMode,
@@ -1147,6 +1204,16 @@ export function DashboardPage() {
     setActiveTab('triggers')
   }
 
+  const handleOrganizationScopeChange = (organizationId: number | null) => {
+    setSelectedOrganizationScope(organizationId)
+    saveOrganizationScope(organizationId)
+    setSelectedDeviceId('')
+    setLiveData([])
+    setTelemetry([])
+    setLatestDeviceReading(null)
+    setDeviceSensors([])
+  }
+
   const formatEventTime = (timestamp: string) => {
     const parsedDate = new Date(timestamp)
     if (Number.isNaN(parsedDate.getTime())) {
@@ -1196,12 +1263,39 @@ export function DashboardPage() {
 
           {session && (
             <p className="dashboard-session">
-              Signed in as <strong>{session.email}</strong> · Org {session.organizationId}
+              Signed in as <strong>{session.email}</strong> · Role{' '}
+              <strong>{session.role}</strong>
+              {session.role === 'organization' ? ` · Org ${session.organizationId}` : ''}
+              {session.role === 'admin' && activeOrganizationScope
+                ? ` · Scope Org ${activeOrganizationScope}`
+                : session.role === 'admin'
+                  ? ' · Scope All organizations'
+                  : ''}
             </p>
           )}
         </div>
 
         <div className="dashboard-header-actions">
+          {session?.role === 'admin' && (
+            <label className="organization-selector">
+              <span>Organization</span>
+              <select
+                value={selectedOrganizationScope ?? ''}
+                onChange={(event) => {
+                  const value = event.target.value
+                  handleOrganizationScopeChange(value === '' ? null : Number(value))
+                }}
+              >
+                <option value="">All organizations</option>
+                {organizations.map((organization) => (
+                  <option key={organization.id} value={organization.id}>
+                    {organization.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           {devices.length > 0 && (
             <DeviceSelector
               devices={devices}

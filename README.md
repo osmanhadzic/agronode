@@ -94,6 +94,23 @@ Services:
 - MQTT: `localhost:1883`
 - PostgreSQL: `localhost:5432`
 
+## Frontend Login
+
+Backend creates a bootstrap admin account on first startup (when `users` table is empty):
+
+- email: `admin@agronode.local`
+- password: `admin123`
+
+Frontend routing by role:
+
+- `admin` -> `/admin`
+- `organization` -> `/org`
+
+Backend variables for overriding login defaults:
+
+- `FRONTEND_LOGIN_EMAIL`
+- `FRONTEND_LOGIN_PASSWORD`
+
 ## Environment (Backend)
 
 ```env
