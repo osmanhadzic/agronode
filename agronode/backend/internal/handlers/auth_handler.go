@@ -29,6 +29,7 @@ type loginResponse struct {
 	Token          string `json:"token"`
 	Email          string `json:"email"`
 	OrganizationID uint   `json:"organizationId"`
+	Role           string `json:"role"`
 	ExpiresAt      int64  `json:"expiresAt"`
 }
 
@@ -60,6 +61,7 @@ func (handler *authHandler) login(context *gin.Context) {
 		Token:          token,
 		Email:          claims.Email,
 		OrganizationID: claims.OrganizationID,
+		Role:           claims.Role,
 		ExpiresAt:      claims.ExpiresAt,
 	})
 }

@@ -1,6 +1,14 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+const (
+	UserRoleAdmin        = "admin"
+	UserRoleOrganization = "organization"
+)
 
 type User struct {
 	ID             uint       `gorm:"primaryKey" json:"id"`
@@ -8,7 +16,7 @@ type User struct {
 	Email          string     `gorm:"column:email;not null" json:"email"`
 	FullName       string     `gorm:"column:full_name" json:"fullName,omitempty"`
 	PasswordHash   string     `gorm:"column:password_hash;not null" json:"-"`
-	Role           string     `gorm:"column:role;not null;default:'user'" json:"role"`
+	Role           string     `gorm:"column:role;not null;default:'organization'" json:"role"`
 	LastLoginAt    *time.Time `gorm:"column:last_login_at" json:"lastLoginAt,omitempty"`
 	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:now()" json:"createdAt"`
 	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:now()" json:"updatedAt"`
@@ -16,4 +24,24 @@ type User struct {
 
 func (User) TableName() string {
 	return "users"
+}
+
+func NormalizeUserRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case UserRoleAdmin:
+		return UserRoleAdmin
+	case UserRoleOrganization:
+		return UserRoleOrganization
+	default:
+		return UserRoleOrganization
+	}
+}
+
+func IsSupportedUserRole(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case UserRoleAdmin, UserRoleOrganization:
+		return true
+	default:
+		return false
+	}
 }

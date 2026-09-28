@@ -5,6 +5,7 @@ import "context"
 type contextKey string
 
 const organizationIDContextKey contextKey = "organization_id"
+const userRoleContextKey contextKey = "user_role"
 
 func WithOrganizationID(ctx context.Context, organizationID uint) context.Context {
 	if organizationID == 0 {
@@ -30,4 +31,30 @@ func OrganizationIDFromContext(ctx context.Context) (uint, bool) {
 	}
 
 	return organizationID, true
+}
+
+func WithUserRole(ctx context.Context, role string) context.Context {
+	if ctx == nil || role == "" {
+		return ctx
+	}
+
+	return context.WithValue(ctx, userRoleContextKey, role)
+}
+
+func UserRoleFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+
+	value := ctx.Value(userRoleContextKey)
+	if value == nil {
+		return "", false
+	}
+
+	role, ok := value.(string)
+	if !ok || role == "" {
+		return "", false
+	}
+
+	return role, true
 }

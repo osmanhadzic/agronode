@@ -50,6 +50,7 @@ export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPer
         {periods.map((period) => (
           <button
             key={period.value}
+            type="button"
             className={`filter-btn ${selectedPeriod === period.value ? 'active' : ''}`}
             onClick={() => handlePeriodClick(period.value)}
           >
@@ -57,7 +58,7 @@ export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPer
           </button>
         ))}
         {selectedPeriod && (
-          <button className="filter-btn reset" onClick={handleReset}>
+          <button type="button" className="filter-btn reset" onClick={handleReset}>
             Reset
           </button>
         )}
@@ -86,6 +87,7 @@ export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPer
             </div>
             <button
               className="apply-btn"
+              type="button"
               onClick={handleCustomApply}
               disabled={!startDate || !endDate}
             >
@@ -94,106 +96,6 @@ export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPer
           </div>
         </div>
       )}
-
-      <style>{`
-        .date-filter {
-          margin: 1rem 0;
-          padding: 1rem;
-          background-color: #f5f5f5;
-          border-radius: 8px;
-        }
-
-        .filter-buttons {
-          display: flex;
-          gap: 0.5rem;
-          flex-wrap: wrap;
-        }
-
-        .filter-btn {
-          padding: 0.5rem 1rem;
-          border: 2px solid #ddd;
-          background-color: white;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 0.9rem;
-          transition: all 0.2s;
-        }
-
-        .filter-btn:hover {
-          background-color: #e9ecef;
-        }
-
-        .filter-btn.active {
-          background-color: #007bff;
-          color: white;
-          border-color: #007bff;
-        }
-
-        .filter-btn.reset {
-          background-color: #dc3545;
-          color: white;
-          border-color: #dc3545;
-        }
-
-        .filter-btn.reset:hover {
-          background-color: #c82333;
-          border-color: #bd2130;
-        }
-
-        .custom-range {
-          margin-top: 1rem;
-          padding: 1rem;
-          background-color: white;
-          border-radius: 4px;
-        }
-
-        .date-inputs {
-          display: flex;
-          gap: 1rem;
-          align-items: flex-end;
-          flex-wrap: wrap;
-        }
-
-        .date-input-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-        }
-
-        .date-input-group label {
-          font-size: 0.85rem;
-          font-weight: 500;
-          color: #495057;
-        }
-
-        .date-input-group input {
-          padding: 0.5rem;
-          border: 1px solid #ced4da;
-          border-radius: 4px;
-          font-size: 0.9rem;
-        }
-
-        .apply-btn {
-          padding: 0.5rem 1.5rem;
-          background-color: #28a745;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 0.9rem;
-          transition: background-color 0.2s;
-        }
-
-        .apply-btn:hover:not(:disabled) {
-          background-color: #218838;
-        }
-
-        .apply-btn:disabled {
-          background-color: #6c757d;
-          cursor: not-allowed;
-          opacity: 0.6;
-        }
-      `}</style>
     </div>
   )
 })

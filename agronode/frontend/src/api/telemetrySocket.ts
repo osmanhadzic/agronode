@@ -2,7 +2,7 @@ import type { DeviceStatusEvent, TelemetryReading } from '../types/telemetry'
 
 import { getSessionToken } from './session'
 
-function resolveWebSocketUrl(path: string): string {
+function resolveWebSocketUrl(path: string, organizationId?: number): string {
   const explicitApiBase = import.meta.env.VITE_API_BASE_URL
   const baseUrl = explicitApiBase
     ? explicitApiBase.replace(/^http/, 'ws')
@@ -15,11 +15,16 @@ function resolveWebSocketUrl(path: string): string {
     url.searchParams.set('token', token)
   }
 
+  if (organizationId && organizationId > 0) {
+    url.searchParams.set('organizationId', String(organizationId))
+  }
+
   return url.toString()
 }
 
 function createSocket<T>(
   path: string,
+  organizationId: number | undefined,
   onMessage: (message: T) => void,
   onError?: () => void,
 ): () => void {
@@ -32,7 +37,7 @@ function createSocket<T>(
       return
     }
 
-    socket = new WebSocket(resolveWebSocketUrl(path))
+    socket = new WebSocket(resolveWebSocketUrl(path, organizationId))
 
     socket.onmessage = (event) => {
       try {
@@ -72,15 +77,17 @@ function createSocket<T>(
 }
 
 export function createTelemetrySocket(
+  organizationId: number | undefined,
   onMessage: (reading: TelemetryReading) => void,
   onError?: () => void,
 ): () => void {
-  return createSocket('/ws/telemetry', onMessage, onError)
+  return createSocket('/ws/telemetry', organizationId, onMessage, onError)
 }
 
 export function createDeviceStatusSocket(
+  organizationId: number | undefined,
   onMessage: (event: DeviceStatusEvent) => void,
   onError?: () => void,
 ): () => void {
-  return createSocket('/ws/devices', onMessage, onError)
+  return createSocket('/ws/devices', organizationId, onMessage, onError)
 }

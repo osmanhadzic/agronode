@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"agronode/backend/internal/models"
 	"agronode/backend/internal/tenancy"
 	"github.com/gin-gonic/gin"
 )
@@ -15,15 +16,25 @@ const organizationIDHeader = "X-Organization-ID"
 
 func requestContextWithOrganizationScope(ctx *gin.Context) (context.Context, error) {
 	requestContext := ctx.Request.Context()
+	if role, ok := tenancy.UserRoleFromContext(requestContext); ok && role == models.UserRoleAdmin {
+		return requestContextWithOptionalOrganizationScope(ctx)
+	}
+
 	if organizationID, ok := tenancy.OrganizationIDFromContext(requestContext); ok {
 		return tenancy.WithOrganizationID(requestContext, organizationID), nil
 	}
+
+	return requestContextWithOptionalOrganizationScope(ctx)
+}
+
+func requestContextWithOptionalOrganizationScope(ctx *gin.Context) (context.Context, error) {
+	requestContext := ctx.Request.Context()
 
 	queryValue := strings.TrimSpace(ctx.Query(organizationIDQueryParam))
 	headerValue := strings.TrimSpace(ctx.GetHeader(organizationIDHeader))
 
 	if queryValue == "" && headerValue == "" {
-		return nil, fmt.Errorf("organizationId is required")
+		return requestContext, nil
 	}
 
 	queryID, hasQuery, parseErr := parseOrganizationID(queryValue)
