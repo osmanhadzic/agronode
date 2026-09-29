@@ -13,24 +13,24 @@ type DeviceShadowState map[string]any
 
 // Device represents an IoT device in the system
 type Device struct {
-	ID             uint   `gorm:"primaryKey" json:"id"`
-	DeviceID       string `gorm:"column:device_id;uniqueIndex;not null" json:"deviceId" binding:"required"`
+	ID       uint   `gorm:"primaryKey" json:"id"`
+	DeviceID string `gorm:"column:device_id;uniqueIndex;not null" json:"deviceId" binding:"required"`
 
 	OrganizationID *uint `gorm:"column:organization_id" json:"organizationId,omitempty"`
 	ZoneID         *uint `gorm:"column:asset_unit_id" json:"zoneId,omitempty"`
 
-	DeviceType string `gorm:"column:device_type;not null;default:'publisher'" json:"deviceType"`
-	Status     string `gorm:"not null;default:'unknown'" json:"status"`
+	DeviceType         string `gorm:"column:device_type;not null;default:'publisher'" json:"deviceType"`
+	Status             string `gorm:"not null;default:'unknown'" json:"status"`
 	RegistrationStatus string `gorm:"column:registration_status;not null;default:'active'" json:"registrationStatus"`
 
 	FirmwareVersion string `gorm:"column:firmware_version" json:"firmwareVersion,omitempty"`
 
 	// TLS / provisioning
-	ProvisioningStatus string `gorm:"column:provisioning_status;not null;default:'pending'" json:"provisioningStatus"`
-	APIKeyHash string `gorm:"column:api_key_hash" json:"-"`
-	ProvisioningTokenHash string `gorm:"column:provisioning_token_hash" json:"-"`
-	CertificateSerial  string `gorm:"column:certificate_serial;uniqueIndex" json:"-"`
-	CertificateExpiresAt *time.Time `gorm:"column:certificate_expires_at" json:"certificateExpiresAt,omitempty"`
+	ProvisioningStatus    string     `gorm:"column:provisioning_status;not null;default:'pending'" json:"provisioningStatus"`
+	APIKeyHash            string     `gorm:"column:api_key_hash" json:"-"`
+	ProvisioningTokenHash string     `gorm:"column:provisioning_token_hash" json:"-"`
+	CertificateSerial     string     `gorm:"column:certificate_serial;uniqueIndex" json:"-"`
+	CertificateExpiresAt  *time.Time `gorm:"column:certificate_expires_at" json:"certificateExpiresAt,omitempty"`
 
 	Sensors []Sensor `gorm:"foreignKey:DeviceID;references:DeviceID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"sensors,omitempty"`
 
@@ -38,7 +38,7 @@ type Device struct {
 	Tags              []string          `gorm:"column:tags;type:jsonb;serializer:json" json:"tags,omitempty"`
 	DesiredState      DeviceShadowState `gorm:"column:desired_state;type:jsonb;serializer:json" json:"desiredState,omitempty"`
 	ReportedState     DeviceShadowState `gorm:"column:reported_state;type:jsonb;serializer:json" json:"reportedState,omitempty"`
-	DiscoveredSensors []string           `gorm:"column:discovered_sensors;type:jsonb;serializer:json" json:"discoveredSensors,omitempty"`
+	DiscoveredSensors []string          `gorm:"column:discovered_sensors;type:jsonb;serializer:json" json:"discoveredSensors,omitempty"`
 
 	LastSeen  *time.Time `gorm:"column:last_seen" json:"lastSeen,omitempty"`
 	CreatedAt time.Time  `gorm:"column:created_at;not null;default:now()" json:"createdAt"`
@@ -63,4 +63,7 @@ const (
 	RegistrationStatusActive   = "active"
 	RegistrationStatusInactive = "inactive"
 	RegistrationStatusRevoked  = "revoked"
+
+	ProvisioningStatusPending     = "pending"
+	ProvisioningStatusProvisioned = "provisioned"
 )

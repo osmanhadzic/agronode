@@ -9,7 +9,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.AuthService, telemetryService handlers.TelemetryQueryService, streamControlService handlers.DeviceStreamControlService, triggerService handlers.TriggerService, deviceService handlers.DeviceRegistrationService, realtimeHub *realtime.Hub) *gin.Engine {
+type DeviceRuntimeService interface {
+	handlers.DeviceRegistrationService
+	handlers.DeviceConnectionService
+}
+
+func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.AuthService, telemetryService handlers.TelemetryQueryService, streamControlService handlers.DeviceStreamControlService, triggerService handlers.TriggerService, deviceService DeviceRuntimeService, realtimeHub *realtime.Hub) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), gin.Logger())
 	router.Use(corsMiddleware())
@@ -17,6 +22,7 @@ func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.A
 	publicAPI := router.Group("/api")
 	handlers.RegisterHealthRoutes(publicAPI, logger)
 	handlers.RegisterAuthRoutes(publicAPI, logger, authService)
+	handlers.RegisterDeviceConnectionRoutes(publicAPI, logger, deviceService)
 
 	router.Use(sessionAuthMiddleware(sessionSecret))
 
@@ -39,7 +45,7 @@ func corsMiddleware() gin.HandlerFunc {
 		}
 
 		context.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		context.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Organization-ID, X-Frontend-Token")
+		context.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Organization-ID, X-Frontend-Token, X-Device-API-Key")
 		context.Writer.Header().Set("Access-Control-Max-Age", "43200")
 
 		if context.Request.Method == http.MethodOptions {

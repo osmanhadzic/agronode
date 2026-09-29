@@ -368,6 +368,9 @@ func TestDeviceService_RegisterDevice_AuthSecrets(t *testing.T) {
 		if device.ProvisioningTokenHash != hashDeviceSecret("provisioning-token-value") {
 			t.Fatalf("expected hashed provisioning token, got %q", device.ProvisioningTokenHash)
 		}
+		if device.ProvisioningStatus != models.ProvisioningStatusProvisioned {
+			t.Fatalf("expected device to be provisioned when an API key is provided, got %q", device.ProvisioningStatus)
+		}
 
 		if len(repository.created) != 1 {
 			t.Fatalf("expected 1 created device, got %d", len(repository.created))

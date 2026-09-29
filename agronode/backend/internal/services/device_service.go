@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -180,6 +180,8 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 		DeviceID:              deviceID,
 		DeviceType:            normalizedDeviceType,
 		Status:                models.DeviceStatusUnknown,
+		RegistrationStatus:    models.RegistrationStatusActive,
+		ProvisioningStatus:    models.ProvisioningStatusPending,
 		FirmwareVersion:       normalizedFirmware,
 		Metadata:              metadata,
 		Tags:                  normalizedTags,
@@ -190,6 +192,9 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 		ProvisioningTokenHash: hashDeviceSecret(provisioningToken),
 		CreatedAt:             time.Now(),
 		UpdatedAt:             time.Now(),
+	}
+	if device.APIKeyHash != "" {
+		device.ProvisioningStatus = models.ProvisioningStatusProvisioned
 	}
 
 	if organizationID, ok := tenancy.OrganizationIDFromContext(ctx); ok {

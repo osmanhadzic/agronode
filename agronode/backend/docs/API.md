@@ -2,7 +2,7 @@
 
 Base URL: `http://localhost:8080`
 
-Organization scoping: All endpoints require `X-Organization-ID` header for multi-tenant support.
+Organization scoping: Web/API management endpoints require the `X-Organization-ID` header for multi-tenant support. Device connection lifecycle endpoints instead authenticate with `X-Device-API-Key` and do not use a frontend session.
 
 ---
 
@@ -171,6 +171,42 @@ Notes:
 Possible errors:
 
 - `400` for invalid device ID or metadata
+- `500` for server errors
+
+---
+
+### Device connection lifecycle
+
+Device connection routes use a device-specific key rather than a frontend session. Send the key in `X-Device-API-Key`. Connect and heartbeat update `status` and `lastSeen`; disconnect marks the device offline. All three actions require an active registration and provisioned device. If a certificate serial is registered for the device, the request must arrive over verified mutual TLS using that certificate. Expired certificates are rejected.
+
+#### POST /api/devices/:deviceId/connect
+
+#### POST /api/devices/:deviceId/heartbeat
+
+#### POST /api/devices/:deviceId/disconnect
+
+Example:
+
+```
+POST /api/devices/esp32-lab/connect
+X-Device-API-Key: <device-api-key>
+```
+
+Successful response: `200 OK`
+
+```json
+{
+  "deviceId": "esp32-lab",
+  "status": "online",
+  "lastSeen": "2026-06-01T12:00:00Z"
+}
+```
+
+Possible errors:
+
+- `400` for invalid device ID
+- `401` for missing, invalid, or unknown device credentials
+- `403` for inactive/unprovisioned devices, certificate mismatch, or expired certificate
 - `500` for server errors
 
 ---
