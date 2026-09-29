@@ -210,6 +210,7 @@ Asset hierarchy is now database-generic (not agriculture-specific) while API JSO
 **Migration sequence**
 
 - `000019`: consolidated rename migration (tables, columns, indexes, constraints, sequences)
+- `000020`: device registration status + tenant-scoped identity index
 
 This migration is idempotent and safe to run on mixed environments where old names may still exist.
 
