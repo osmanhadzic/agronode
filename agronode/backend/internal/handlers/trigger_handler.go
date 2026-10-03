@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"agronode/backend/internal/fuzzy"
 	"agronode/backend/internal/models"
 	"agronode/backend/internal/repositories"
 	"agronode/backend/internal/services"
@@ -59,6 +60,55 @@ func RegisterTriggerRoutes(api *gin.RouterGroup, logger *slog.Logger, service Tr
 	api.PUT("/triggers/:deviceId/:sensorId", handler.setSensorTrigger)
 	api.GET("/triggers/:deviceId/:sensorId", handler.getSensorTrigger)
 	api.DELETE("/triggers/:deviceId/:sensorId", handler.deleteSensorTrigger)
+	// Evaluate fuzzy trigger without performing activations - safe preview endpoint for UI
+	api.POST("/triggers/:deviceId/:sensorId/evaluate", handler.evaluateFuzzyTrigger)
+}
+
+type fuzzyEvaluateRequest struct {
+	Inputs  map[string]float64   `json:"inputs"`
+	Trigger fuzzy.FuzzyTrigger   `json:"trigger"`
+}
+
+// evaluateFuzzyTrigger accepts a fuzzy trigger and input values and returns evaluation details.
+// This endpoint does NOT publish activation commands or change system state.
+func (handler *triggerHandler) evaluateFuzzyTrigger(context *gin.Context) {
+	deviceID := context.Param("deviceId")
+	sensorID := context.Param("sensorId")
+	// authorization / organization scope not required for preview, but keep consistent
+	_, err := requestContextWithOrganizationScope(context)
+	if err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req fuzzyEvaluateRequest
+	if err := context.ShouldBindJSON(&req); err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	// fill missing membership function sensor fields with the requested sensorID for convenience
+	for i := range req.Trigger.MembershipFunctions {
+		if req.Trigger.MembershipFunctions[i].Sensor == "" {
+			req.Trigger.MembershipFunctions[i].Sensor = sensorID
+		}
+	}
+
+	// if inputs don't include the sensorID but contain a single unnamed value under "value", map it
+	if req.Inputs == nil {
+		req.Inputs = map[string]float64{}
+	}
+
+	result, err := fuzzy.EvaluateTrigger(req.Trigger, req.Inputs)
+	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Error("fuzzy evaluate failed", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	context.JSON(http.StatusOK, result)
 }
 
 func (handler *triggerHandler) deleteSensorTrigger(context *gin.Context) {

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"agronode/backend/internal/fuzzy"
 	"agronode/backend/internal/models"
 	"agronode/backend/internal/mqtt"
 	"agronode/backend/internal/repositories"
@@ -616,9 +618,76 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 			}
 		}
 
+		// Fuzzy trigger evaluation (if fuzzy config present)
+		if len(trigger.FuzzyConfig) > 0 {
+			var fTrigger fuzzy.FuzzyTrigger
+			if err := json.Unmarshal(trigger.FuzzyConfig, &fTrigger); err != nil {
+				if service.logger != nil {
+					service.logger.Warn("invalid fuzzy trigger config, skipping", "deviceId", reading.DeviceID, "sensorId", sensorID, "error", err)
+				}
+			} else {
+				// Prepare inputs: use full reading.Sensors map
+				inputs := make(map[string]float64, len(reading.Sensors))
+				for k, v := range reading.Sensors {
+					inputs[k] = v
+				}
+
+				// If membership functions don't specify sensor, assume current sensor
+				for i, mf := range fTrigger.MembershipFunctions {
+					if mf.Sensor == "" {
+						fTrigger.MembershipFunctions[i].Sensor = sensorID
+					}
+				}
+
+				eval, err := fuzzy.EvaluateTrigger(fTrigger, inputs)
+				if err != nil {
+					if service.logger != nil {
+						service.logger.Warn("fuzzy evaluation failed", "deviceId", reading.DeviceID, "sensorId", sensorID, "error", err)
+					}
+				} else {
+					// Log membership degrees (sparse)
+					if service.logger != nil {
+						service.logger.Debug("fuzzy evaluation", "deviceId", reading.DeviceID, "sensorId", sensorID, "memberships", eval.Memberships, "rules", eval.Rules)
+					}
+
+					// For each rule result with strength > 0, send activation command
+					for _, rr := range eval.Rules {
+						if rr.Strength <= 0 {
+							continue
+						}
+
+						targetDeviceID := resolveTargetDeviceID(reading.DeviceID, trigger)
+
+						// Use trigger name including rule for clarity
+						cmd := mqtt.ActivationCommand{
+							DeviceID:  targetDeviceID,
+							Trigger:   "fuzzy:" + rr.Name,
+							Sensor:    sensorID,
+							LimitType: rr.Action.Type,
+							Value:     rr.Value,
+							Threshold: rr.Strength,
+							Activated: true,
+							Timestamp: time.Now().UTC().Unix(),
+						}
+
+						if service.triggerPublisher != nil {
+							if err := service.triggerPublisher.PublishActivationCommand(context, cmd); err != nil {
+								if service.logger != nil {
+									service.logger.Error("fuzzy activation publish failed", "deviceId", targetDeviceID, "rule", rr.Name, "error", err)
+								}
+							} else if service.logger != nil {
+								service.logger.Info("fuzzy activation command published", "deviceId", targetDeviceID, "rule", rr.Name, "value", rr.Value, "strength", rr.Strength)
+							}
+						} else if service.logger != nil {
+							service.logger.Warn("fuzzy activation not sent: trigger publisher not configured", "deviceId", targetDeviceID, "rule", rr.Name)
+						}
+					}
+				}
+			}
+		}
+
 		statesCopy[sensorID] = state
 	}
-
 	service.triggerMutex.Lock()
 	if service.triggerState[reading.DeviceID] == nil {
 		service.triggerState[reading.DeviceID] = make(map[string]sensorTriggerState)

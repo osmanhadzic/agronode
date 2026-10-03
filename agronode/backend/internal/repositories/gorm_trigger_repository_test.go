@@ -53,6 +53,7 @@ func newTestTriggerDB(t *testing.T) *gorm.DB {
 			min_value REAL,
 			max_value REAL,
 			target_device_id TEXT,
+			fuzzy_config TEXT,
 			updated_at DATETIME NOT NULL,
 			UNIQUE(device_id, sensor_id)
 		);
