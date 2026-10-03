@@ -22,6 +22,7 @@ import { DeviceMetaPanel } from '../components/DeviceMetaPanel'
 import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
 import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector'
+import FuzzyTriggerEditor from '../components/FuzzyTriggerEditor'
 import { clearSession, loadOrganizationScope, loadSession, saveOrganizationScope } from '../api/session'
 import type { OrganizationSummary } from '../types/organization'
 import type { TelemetryReading, TriggerListItem, DeviceSensor } from '../types/telemetry'
@@ -183,6 +184,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
   const [deviceTriggers, setDeviceTriggers] = useState<TriggerListItem[]>([])
   const [isLoadingTriggers, setIsLoadingTriggers] = useState(false)
   const [deletingSensor, setDeletingSensor] = useState('')
+  const [showFuzzyEditor, setShowFuzzyEditor] = useState(false)
   const [activeTriggerEvent, setActiveTriggerEvent] = useState<TriggerEvent | null>(null)
   const [triggerEvents, setTriggerEvents] = useState<TriggerEvent[]>([])
   const [toastTriggerEvent, setToastTriggerEvent] = useState<TriggerEvent | null>(null)
@@ -1617,10 +1619,25 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                   ))}
                 </select>
               </label>
-              <button type="submit" disabled={isSavingTrigger || !selectedDeviceId}>
-                {isSavingTrigger ? 'Saving...' : 'Save Trigger'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button type="submit" disabled={isSavingTrigger || !selectedDeviceId}>
+                  {isSavingTrigger ? 'Saving...' : 'Save Trigger'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFuzzyEditor((s) => !s)}
+                  disabled={!selectedDeviceId}
+                >
+                  {showFuzzyEditor ? 'Close Fuzzy Editor' : 'Open Fuzzy Editor'}
+                </button>
+              </div>
             </form>
+
+            {showFuzzyEditor && selectedDeviceId && (
+              <div style={{ marginTop: 12 }}>
+                <FuzzyTriggerEditor deviceId={selectedDeviceId} sensorId={activeTriggerSensor} />
+              </div>
+            )}
 
             <div className="trigger-list">
               <h3 className="trigger-list-title">Configured Triggers</h3>
