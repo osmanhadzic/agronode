@@ -119,7 +119,7 @@ export async function fetchSensorTriggerByDeviceId(
 export async function saveSensorTriggerByDeviceId(
   deviceId: string,
   sensorId: string,
-  payload: { min?: number; max?: number; targetDeviceId?: string },
+  payload: { min?: number; max?: number; targetDeviceId?: string; fuzzyConfig?: any },
 ): Promise<SensorTrigger> {
   const encodedSensor = encodeURIComponent(sensorId)
 
@@ -155,5 +155,75 @@ export async function sendDeviceStreamControl(
     { action, sensorId },
   )
 
+  return data
+}
+
+// Fuzzy trigger types for UI evaluate endpoint
+export interface MembershipFunction {
+  name: string
+  sensor?: string
+  type: 'triangle' | 'trapezoid'
+  parameters: number[]
+}
+
+export interface Condition {
+  sensor: string
+  membership: string
+}
+
+export interface Action {
+  type: string
+  value: number
+}
+
+export interface Rule {
+  name: string
+  conditions: Condition[]
+  operator?: 'AND' | 'OR'
+  action: Action
+}
+
+export interface FuzzyTrigger {
+  name?: string
+  membershipFunctions: MembershipFunction[]
+  rules: Rule[]
+}
+
+export interface RuleResult {
+  name: string
+  strength: number
+  action: Action
+  value: number
+}
+
+export interface EvaluationResult {
+  input: Record<string, number>
+  memberships: Record<string, Record<string, number>>
+  rules: RuleResult[]
+}
+
+export async function evaluateFuzzyTrigger(
+  deviceId: string,
+  sensorId: string,
+  payload: { inputs?: Record<string, number>; trigger: FuzzyTrigger },
+): Promise<EvaluationResult> {
+  const encodedSensor = encodeURIComponent(sensorId)
+  const { data } = await httpClient.post<EvaluationResult>(
+    `/api/triggers/${deviceId}/${encodedSensor}/evaluate`,
+    payload,
+  )
+  return data
+}
+
+export async function evaluateSavedTrigger(
+  deviceId: string,
+  sensorId: string,
+  inputs?: Record<string, number>,
+): Promise<EvaluationResult> {
+  const encodedSensor = encodeURIComponent(sensorId)
+  const { data } = await httpClient.post<EvaluationResult>(
+    `/api/triggers/${deviceId}/${encodedSensor}/evaluate-saved`,
+    { inputs: inputs ?? {} },
+  )
   return data
 }

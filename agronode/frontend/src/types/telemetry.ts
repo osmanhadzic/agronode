@@ -45,6 +45,7 @@ export interface SensorTrigger {
   min?: number
   max?: number
   targetDeviceId?: string
+  fuzzyConfig?: any
 }
 
 export interface TriggerListItem {
