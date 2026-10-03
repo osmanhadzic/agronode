@@ -2,10 +2,12 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
 	"agronode/backend/internal/models"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -46,26 +48,40 @@ func (repository *GormTriggerRepository) Upsert(context context.Context, deviceI
 		TargetDeviceID: targetDeviceID,
 		UpdatedAt:      time.Now().UTC(),
 	}
+	if len(trigger.FuzzyConfig) > 0 {
+		entity.FuzzyConfig = datatypes.JSON(trigger.FuzzyConfig)
+	}
 
-	return repository.database.WithContext(context).
+	m := map[string]interface{}{
+		"min_value":        entity.MinValue,
+		"max_value":        entity.MaxValue,
+		"target_device_id": entity.TargetDeviceID,
+		"updated_at":       entity.UpdatedAt,
+	}
+	if len(trigger.FuzzyConfig) > 0 {
+		m["fuzzy_config"] = entity.FuzzyConfig
+	}
+
+	db := repository.database.WithContext(context).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
 				{Name: "device_id"},
 				{Name: "sensor_id"},
 			},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"min_value":        entity.MinValue,
-				"max_value":        entity.MaxValue,
-				"target_device_id": entity.TargetDeviceID,
-				"updated_at":       entity.UpdatedAt,
-			}),
-		}).
-		Create(&entity).Error
+			DoUpdates: clause.Assignments(m),
+		})
+
+	if len(trigger.FuzzyConfig) > 0 {
+		return db.Create(&entity).Error
+	}
+
+	return db.Omit("fuzzy_config").Create(&entity).Error
 }
 
 func (repository *GormTriggerRepository) GetByDeviceAndSensor(context context.Context, deviceID, sensorID string) (models.SensorTrigger, error) {
 	var entity models.SensorTriggerEntity
 	db := repository.database.WithContext(context).
+		Select("sensor_triggers.id, sensor_triggers.device_id, sensor_triggers.sensor_id, sensor_triggers.min_value, sensor_triggers.max_value, sensor_triggers.target_device_id, sensor_triggers.updated_at").
 		Where("sensor_triggers.device_id = ? AND sensor_triggers.sensor_id = ?", deviceID, sensorID)
 
 	if organizationID, ok := organizationIDFromContext(context); ok {
@@ -87,12 +103,14 @@ func (repository *GormTriggerRepository) GetByDeviceAndSensor(context context.Co
 		Min:            entity.MinValue,
 		Max:            entity.MaxValue,
 		TargetDeviceID: valueOrEmpty(entity.TargetDeviceID),
+		FuzzyConfig:    json.RawMessage(entity.FuzzyConfig),
 	}, nil
 }
 
 func (repository *GormTriggerRepository) ListByDeviceID(context context.Context, deviceID string) (map[string]models.SensorTrigger, error) {
 	var entities []models.SensorTriggerEntity
 	db := repository.database.WithContext(context).
+		Select("sensor_triggers.id, sensor_triggers.device_id, sensor_triggers.sensor_id, sensor_triggers.min_value, sensor_triggers.max_value, sensor_triggers.target_device_id, sensor_triggers.updated_at").
 		Where("sensor_triggers.device_id = ?", deviceID)
 
 	if organizationID, ok := organizationIDFromContext(context); ok {
@@ -112,6 +130,7 @@ func (repository *GormTriggerRepository) ListByDeviceID(context context.Context,
 			Min:            entity.MinValue,
 			Max:            entity.MaxValue,
 			TargetDeviceID: valueOrEmpty(entity.TargetDeviceID),
+			FuzzyConfig:    json.RawMessage(entity.FuzzyConfig),
 		}
 	}
 

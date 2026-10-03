@@ -2,10 +2,12 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"agronode/backend/internal/fuzzy"
 	"agronode/backend/internal/models"
 	"agronode/backend/internal/mqtt"
 	"agronode/backend/internal/repositories"
@@ -464,6 +466,34 @@ func TestTelemetryService_SetSensorTrigger(t *testing.T) {
 			t.Fatalf("expected ErrNotFound, got %v", err)
 		}
 	})
+}
+
+func TestTelemetryService_SetSensorTrigger_FuzzyValidation(t *testing.T) {
+	repository := &telemetryRepositoryStub{}
+	service := NewTelemetryService(repository, nil)
+
+	// invalid fuzzy JSON
+	invalidJSON := []byte(`{"membershipFunctions": [ { "name": "a" } ] }`)
+	err := service.SetSensorTrigger(context.Background(), "esp32-lab", "temp", models.SensorTrigger{FuzzyConfig: invalidJSON})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation for invalid fuzzy json, got %v", err)
+	}
+
+	// valid fuzzy but semantic error (triangle wrong params)
+	badTrig := fuzzy.FuzzyTrigger{MembershipFunctions: []fuzzy.MembershipFunction{{Name: "m", Sensor: "temp", Type: "triangle", Parameters: []float64{10, 5, 0}}}, Rules: []fuzzy.Rule{{Name: "r", Conditions: []fuzzy.Condition{{Sensor: "temp", Membership: "m"}}, Action: fuzzy.Action{Type: "x", Value: 1}}}}
+	data, _ := json.Marshal(badTrig)
+	err = service.SetSensorTrigger(context.Background(), "esp32-lab", "temp", models.SensorTrigger{FuzzyConfig: data})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation for semantic fuzzy error, got %v", err)
+	}
+
+	// valid fuzzy config should pass
+	goodTrig := fuzzy.FuzzyTrigger{MembershipFunctions: []fuzzy.MembershipFunction{{Name: "m", Sensor: "temp", Type: "triangle", Parameters: []float64{0, 5, 10}}}, Rules: []fuzzy.Rule{{Name: "r", Conditions: []fuzzy.Condition{{Sensor: "temp", Membership: "m"}}, Action: fuzzy.Action{Type: "x", Value: 1}}}}
+	data, _ = json.Marshal(goodTrig)
+	err = service.SetSensorTrigger(context.Background(), "esp32-lab", "temp", models.SensorTrigger{FuzzyConfig: data})
+	if err != nil {
+		t.Fatalf("expected no error for valid fuzzy, got %v", err)
+	}
 }
 
 func TestTelemetryService_GenericTriggerActivation_TargetDevice(t *testing.T) {
