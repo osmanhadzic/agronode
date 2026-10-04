@@ -12,6 +12,7 @@ import {
   fetchLatestTelemetryByDeviceId,
   saveSensorTriggerByDeviceId,
   sendDeviceStreamControl,
+  evaluateSavedTrigger,
   type DateFilterPeriod,
 } from '../api/telemetryApi'
 import { fetchOrganizations } from '../api/organizationApi'
@@ -22,6 +23,7 @@ import { DeviceMetaPanel } from '../components/DeviceMetaPanel'
 import { DeviceSelector } from '../components/DeviceSelector'
 import { SensorCard } from '../components/SensorCard'
 import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector'
+import FuzzyTriggerEditor from '../components/FuzzyTriggerEditor'
 import { clearSession, loadOrganizationScope, loadSession, saveOrganizationScope } from '../api/session'
 import type { OrganizationSummary } from '../types/organization'
 import type { TelemetryReading, TriggerListItem, DeviceSensor } from '../types/telemetry'
@@ -183,9 +185,13 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
   const [deviceTriggers, setDeviceTriggers] = useState<TriggerListItem[]>([])
   const [isLoadingTriggers, setIsLoadingTriggers] = useState(false)
   const [deletingSensor, setDeletingSensor] = useState('')
+  const [showFuzzyEditor, setShowFuzzyEditor] = useState(false)
+  const [savedFuzzyConfig, setSavedFuzzyConfig] = useState<any | null>(null)
+  const [isFuzzyValid, setIsFuzzyValid] = useState(true)
   const [activeTriggerEvent, setActiveTriggerEvent] = useState<TriggerEvent | null>(null)
   const [triggerEvents, setTriggerEvents] = useState<TriggerEvent[]>([])
   const [toastTriggerEvent, setToastTriggerEvent] = useState<TriggerEvent | null>(null)
+  const [previewModal, setPreviewModal] = useState<{ open: boolean; sensorId?: string; loading: boolean; result?: any; error?: string }>({ open: false, loading: false })
   const [activeTab, setActiveTab] = useState<'overview' | 'telemetry' | 'sensors' | 'triggers'>('overview')
   const triggerActivationState = useRef<Record<string, { min: boolean; max: boolean }>>({})
   const selectedDeviceRef = useRef('')
@@ -1017,6 +1023,27 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
     }
   }, [selectedDeviceId])
 
+  useEffect(() => {
+    let isMounted = true
+    if (!showFuzzyEditor || !selectedDeviceId || !activeTriggerSensor) {
+      setSavedFuzzyConfig(null)
+      return () => { isMounted = false }
+    }
+
+    setSavedFuzzyConfig(null)
+    ;(async () => {
+      try {
+        const trigger = await fetchSensorTriggerByDeviceId(selectedDeviceId, activeTriggerSensor)
+        if (!isMounted) return
+        setSavedFuzzyConfig(trigger?.fuzzyConfig ?? null)
+      } catch {
+        if (isMounted) setSavedFuzzyConfig(null)
+      }
+    })()
+
+    return () => { isMounted = false }
+  }, [showFuzzyEditor, selectedDeviceId, activeTriggerSensor])
+
   const refreshDeviceTriggers = async (deviceId: string) => {
     const response = await fetchTriggersByDeviceId(deviceId)
     const sortedTriggers = [...response.triggers].sort((left, right) =>
@@ -1058,6 +1085,24 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
       return
     }
 
+    // client-side validate fuzzy config if present
+    if (savedFuzzyConfig) {
+      try {
+        // lazy import shared validator to keep bundles small
+        const { validateFuzzyConfig } = await import('../utils/fuzzyValidation')
+        const res = validateFuzzyConfig(savedFuzzyConfig)
+        if (res.errors.length > 0) {
+          setTriggerError(`Invalid fuzzy config: ${res.errors[0]}`)
+          setTriggerMessage('')
+          return
+        }
+      } catch (e) {
+        setTriggerError('Invalid fuzzy config')
+        setTriggerMessage('')
+        return
+      }
+    }
+
     setIsSavingTrigger(true)
     setTriggerError('')
     setTriggerMessage('')
@@ -1070,13 +1115,14 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
           min,
           max,
           targetDeviceId: targetTriggerDeviceId.trim() || selectedDeviceId,
+          fuzzyConfig: savedFuzzyConfig ?? undefined,
         },
       )
 
       setMinThresholdInput(savedTrigger.min !== undefined ? String(savedTrigger.min) : '')
       setMaxThresholdInput(savedTrigger.max !== undefined ? String(savedTrigger.max) : '')
       setTargetTriggerDeviceId(savedTrigger.targetDeviceId ?? selectedDeviceId)
-      setTriggerMessage('Trigger saved successfully')
+      setTriggerMessage(savedFuzzyConfig ? 'Trigger and fuzzy config saved successfully' : 'Trigger saved successfully')
       await refreshDeviceTriggers(selectedDeviceId)
     } catch {
       setTriggerError('Failed to save trigger values')
@@ -1617,10 +1663,25 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                   ))}
                 </select>
               </label>
-              <button type="submit" disabled={isSavingTrigger || !selectedDeviceId}>
-                {isSavingTrigger ? 'Saving...' : 'Save Trigger'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button type="submit" disabled={isSavingTrigger || !selectedDeviceId || (savedFuzzyConfig !== null && !isFuzzyValid)}>
+                  {isSavingTrigger ? 'Saving...' : 'Save Trigger'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFuzzyEditor((s) => !s)}
+                  disabled={!selectedDeviceId}
+                >
+                  {showFuzzyEditor ? 'Close Fuzzy Editor' : 'Open Fuzzy Editor'}
+                </button>
+              </div>
             </form>
+
+            {showFuzzyEditor && selectedDeviceId && (
+              <div style={{ marginTop: 12 }}>
+                <FuzzyTriggerEditor deviceId={selectedDeviceId} sensorId={activeTriggerSensor} initialFuzzyConfig={savedFuzzyConfig} onChange={(cfg) => setSavedFuzzyConfig(cfg)} onValidChange={(v) => setIsFuzzyValid(v)} />
+              </div>
+            )}
 
             <div className="trigger-list">
               <h3 className="trigger-list-title">Configured Triggers</h3>
@@ -1641,6 +1702,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                   </thead>
                   <tbody>
                     {deviceTriggers.map((trigger) => (
+                      <>
                       <tr key={trigger.sensorId}>
                         <td>{formatSensorLabel(trigger.sensorId)}</td>
                         <td>{trigger.min !== undefined ? trigger.min : '-'}</td>
@@ -1661,8 +1723,29 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                           >
                             {deletingSensor === trigger.sensorId ? 'Deleting...' : 'Delete'}
                           </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!selectedDeviceId) return
+                              setPreviewModal({ open: true, sensorId: trigger.sensorId, loading: true })
+                              // attempt to find a current value for the sensor
+                              const sensorVal = liveSensorSnapshots[selectedDeviceId]?.[trigger.sensorId] ?? latestDeviceReading?.sensors?.[trigger.sensorId]
+                              const inputs = sensorVal !== undefined ? { [trigger.sensorId]: sensorVal } : {}
+                              try {
+                                const res = await evaluateSavedTrigger(selectedDeviceId, trigger.sensorId, inputs)
+                                setPreviewModal({ open: true, sensorId: trigger.sensorId, loading: false, result: res })
+                              } catch (e: any) {
+                                setPreviewModal({ open: true, sensorId: trigger.sensorId, loading: false, error: e?.message ?? 'preview failed' })
+                              }
+                            }}
+                            disabled={!selectedDeviceId}
+                          >
+                            Preview
+                          </button>
                         </td>
                       </tr>
+                      
+                      </>
                     ))}
                   </tbody>
                 </table>
@@ -1710,6 +1793,56 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
             </div>
           </section>
         </section>
+      )}
+
+      {previewModal.open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="preview-modal-backdrop"
+          onClick={() => setPreviewModal({ open: false, loading: false })}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+          }}
+        >
+          <div
+            className="preview-modal-content"
+            role="document"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: 8,
+              padding: 16,
+              width: 'min(900px, 95%)',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Preview Trigger — {previewModal.sensorId ? formatSensorLabel(previewModal.sensorId) : ''}</h3>
+              <div>
+                <button type="button" onClick={() => setPreviewModal({ open: false, loading: false })}>Close</button>
+              </div>
+            </div>
+
+            <div>
+              {previewModal.loading ? (
+                <p>Loading preview…</p>
+              ) : previewModal.error ? (
+                <div className="dashboard-message">Error: {previewModal.error}</div>
+              ) : (
+                <pre style={{ maxHeight: '60vh', overflow: 'auto', background: '#f7f7f7', padding: 12 }}>{JSON.stringify(previewModal.result, null, 2)}</pre>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </main>
   )
