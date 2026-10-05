@@ -34,6 +34,9 @@ func RegisterOrganizationRoutes(api *gin.RouterGroup, logger *slog.Logger, servi
 func (handler *organizationHandler) listOrganizations(ctx *gin.Context) {
 	requestContext, err := requestContextWithOrganizationScope(ctx)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("list organizations rejected", "error", err)
+		}
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -45,6 +48,9 @@ func (handler *organizationHandler) listOrganizations(ctx *gin.Context) {
 		return
 	}
 
+	if handler.logger != nil {
+		handler.logger.Debug("list organizations succeeded", "count", len(organizations))
+	}
 	responses := make([]organizationResponse, len(organizations))
 	for i, organization := range organizations {
 		responses[i] = organizationResponse{

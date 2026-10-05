@@ -47,6 +47,9 @@ func RegisterTelemetryRoutes(api *gin.RouterGroup, logger *slog.Logger, service 
 func (handler *telemetryHandler) getAllData(context *gin.Context) {
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("get all telemetry rejected", "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -58,6 +61,9 @@ func (handler *telemetryHandler) getAllData(context *gin.Context) {
 		return
 	}
 
+	if handler.logger != nil {
+		handler.logger.Debug("get all telemetry succeeded", "count", len(readings))
+	}
 	context.JSON(http.StatusOK, toTelemetryResponses(readings))
 }
 
@@ -65,6 +71,9 @@ func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 	deviceID := context.Param("deviceId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("get telemetry by device rejected", "deviceId", deviceID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -84,6 +93,9 @@ func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 		if startDateStr != "" {
 			parsed, parseErr := time.Parse(time.RFC3339, startDateStr)
 			if parseErr != nil {
+				if handler.logger != nil {
+					handler.logger.Warn("invalid telemetry startDate", "deviceId", deviceID, "startDate", startDateStr, "error", parseErr)
+				}
 				context.JSON(http.StatusBadRequest, gin.H{"error": "invalid startDate format, use RFC3339"})
 				return
 			}
@@ -93,6 +105,9 @@ func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 		if endDateStr != "" {
 			parsed, parseErr := time.Parse(time.RFC3339, endDateStr)
 			if parseErr != nil {
+				if handler.logger != nil {
+					handler.logger.Warn("invalid telemetry endDate", "deviceId", deviceID, "endDate", endDateStr, "error", parseErr)
+				}
 				context.JSON(http.StatusBadRequest, gin.H{"error": "invalid endDate format, use RFC3339"})
 				return
 			}
@@ -121,6 +136,9 @@ func (handler *telemetryHandler) getDataByDeviceID(context *gin.Context) {
 		return
 	}
 
+	if handler.logger != nil {
+		handler.logger.Debug("get telemetry by device succeeded", "deviceId", deviceID, "count", len(readings), "period", period)
+	}
 	context.JSON(http.StatusOK, toTelemetryResponses(readings))
 }
 
@@ -129,6 +147,9 @@ func (handler *telemetryHandler) getDataByDeviceAndSensorID(context *gin.Context
 	sensorID := context.Param("sensorId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("get telemetry by device and sensor rejected", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -145,6 +166,9 @@ func (handler *telemetryHandler) getDataByDeviceAndSensorID(context *gin.Context
 		return
 	}
 
+	if handler.logger != nil {
+		handler.logger.Debug("get telemetry by device and sensor succeeded", "deviceId", deviceID, "sensorId", sensorID, "count", len(readings))
+	}
 	context.JSON(http.StatusOK, toTelemetryResponses(readings))
 }
 
@@ -152,6 +176,9 @@ func (handler *telemetryHandler) getLatestByDeviceID(context *gin.Context) {
 	deviceID := context.Param("deviceId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("get latest telemetry rejected", "deviceId", deviceID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -159,6 +186,9 @@ func (handler *telemetryHandler) getLatestByDeviceID(context *gin.Context) {
 	reading, err := handler.service.GetLatestTelemetryByDeviceID(requestContext, deviceID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
+			if handler.logger != nil {
+				handler.logger.Warn("latest telemetry not found", "deviceId", deviceID)
+			}
 			context.JSON(http.StatusNotFound, gin.H{"error": "telemetry not found"})
 			return
 		}
@@ -173,6 +203,9 @@ func (handler *telemetryHandler) getLatestByDeviceID(context *gin.Context) {
 		return
 	}
 
+	if handler.logger != nil {
+		handler.logger.Debug("get latest telemetry succeeded", "deviceId", deviceID, "sensorId", reading.SensorID)
+	}
 	context.JSON(http.StatusOK, toTelemetryResponse(reading))
 }
 

@@ -42,18 +42,27 @@ func (handler *deviceStreamHandler) setStreamControl(context *gin.Context) {
 	deviceID := context.Param("deviceId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("set stream control rejected", "deviceId", deviceID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	var request deviceStreamControlRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("set stream control invalid request", "deviceId", deviceID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
 	action := strings.ToLower(strings.TrimSpace(request.Action))
 	if action != "pause" && action != "resume" {
+		if handler.logger != nil {
+			handler.logger.Warn("set stream control invalid action", "deviceId", deviceID, "action", request.Action)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": "action must be pause or resume"})
 		return
 	}
@@ -65,6 +74,9 @@ func (handler *deviceStreamHandler) setStreamControl(context *gin.Context) {
 	}
 	if err := handler.service.SetTelemetryStreaming(requestContext, deviceID, trimmedSensorID, enabled); err != nil {
 		if errors.Is(err, services.ErrValidation) {
+			if handler.logger != nil {
+				handler.logger.Warn("set stream control validation failed", "deviceId", deviceID, "action", action, "sensorId", trimmedSensorID, "error", err)
+			}
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -75,6 +87,10 @@ func (handler *deviceStreamHandler) setStreamControl(context *gin.Context) {
 
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set device stream control"})
 		return
+	}
+
+	if handler.logger != nil {
+		handler.logger.Info("set stream control succeeded", "deviceId", deviceID, "action", action, "sensorId", trimmedSensorID, "streaming", enabled)
 	}
 
 	context.JSON(http.StatusOK, deviceStreamControlResponse{

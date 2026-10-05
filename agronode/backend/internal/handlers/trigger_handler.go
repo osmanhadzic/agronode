@@ -81,12 +81,18 @@ func (handler *triggerHandler) evaluateFuzzyTrigger(context *gin.Context) {
 	// authorization / organization scope not required for preview, but keep consistent
 	_, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("evaluate fuzzy trigger rejected", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	var req fuzzyEvaluateRequest
 	if err := context.ShouldBindJSON(&req); err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("evaluate fuzzy trigger invalid request", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
@@ -125,12 +131,18 @@ func (handler *triggerHandler) evaluateSavedTrigger(context *gin.Context) {
 
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("evaluate saved trigger rejected", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	var req evaluateSavedRequest
 	if err := context.ShouldBindJSON(&req); err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("evaluate saved trigger invalid request", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
@@ -147,6 +159,9 @@ func (handler *triggerHandler) evaluateSavedTrigger(context *gin.Context) {
 	}
 
 	if len(triggerModel.FuzzyConfig) == 0 {
+		if handler.logger != nil {
+			handler.logger.Warn("evaluate saved trigger missing fuzzy config", "deviceId", deviceID, "sensorId", sensorID)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": "trigger does not contain fuzzyConfig"})
 		return
 	}
@@ -184,6 +199,9 @@ func (handler *triggerHandler) deleteSensorTrigger(context *gin.Context) {
 	sensorID := context.Param("sensorId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("delete sensor trigger rejected", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -196,6 +214,9 @@ func (handler *triggerHandler) deleteSensorTrigger(context *gin.Context) {
 		}
 
 		if errors.Is(err, services.ErrValidation) {
+			if handler.logger != nil {
+				handler.logger.Warn("delete sensor trigger validation failed", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+			}
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -207,6 +228,10 @@ func (handler *triggerHandler) deleteSensorTrigger(context *gin.Context) {
 		return
 	}
 
+	if handler.logger != nil {
+		handler.logger.Info("sensor trigger deleted", "deviceId", deviceID, "sensorId", sensorID)
+	}
+
 	context.Status(http.StatusNoContent)
 }
 
@@ -214,6 +239,9 @@ func (handler *triggerHandler) listDeviceTriggers(context *gin.Context) {
 	deviceID := context.Param("deviceId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("list sensor triggers rejected", "deviceId", deviceID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -221,6 +249,9 @@ func (handler *triggerHandler) listDeviceTriggers(context *gin.Context) {
 	triggers, err := handler.service.ListSensorTriggers(requestContext, deviceID)
 	if err != nil {
 		if errors.Is(err, services.ErrValidation) {
+			if handler.logger != nil {
+				handler.logger.Warn("list sensor triggers validation failed", "deviceId", deviceID, "error", err)
+			}
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -247,6 +278,9 @@ func (handler *triggerHandler) listDeviceTriggers(context *gin.Context) {
 		DeviceID: deviceID,
 		Triggers: items,
 	})
+	if handler.logger != nil {
+		handler.logger.Debug("list sensor triggers succeeded", "deviceId", deviceID, "count", len(items))
+	}
 }
 
 func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
@@ -254,12 +288,18 @@ func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 	sensorID := context.Param("sensorId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("set sensor trigger rejected", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	var request sensorTriggerRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("set sensor trigger invalid request", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
@@ -278,6 +318,9 @@ func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 		}
 
 		if errors.Is(err, services.ErrValidation) {
+			if handler.logger != nil {
+				handler.logger.Warn("set sensor trigger validation failed", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+			}
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -291,6 +334,10 @@ func (handler *triggerHandler) setSensorTrigger(context *gin.Context) {
 
 	if trigger.TargetDeviceID == "" {
 		trigger.TargetDeviceID = deviceID
+	}
+
+	if handler.logger != nil {
+		handler.logger.Info("sensor trigger configured", "deviceId", deviceID, "sensorId", sensorID, "targetDeviceId", trigger.TargetDeviceID)
 	}
 
 	context.JSON(http.StatusOK, sensorTriggerResponse{
@@ -308,6 +355,9 @@ func (handler *triggerHandler) getSensorTrigger(context *gin.Context) {
 	sensorID := context.Param("sensorId")
 	requestContext, err := requestContextWithOrganizationScope(context)
 	if err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("get sensor trigger rejected", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -324,6 +374,9 @@ func (handler *triggerHandler) getSensorTrigger(context *gin.Context) {
 		}
 
 		if errors.Is(err, services.ErrValidation) {
+			if handler.logger != nil {
+				handler.logger.Warn("get sensor trigger validation failed", "deviceId", deviceID, "sensorId", sensorID, "error", err)
+			}
 			context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
