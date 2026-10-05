@@ -1,0 +1,43 @@
+groups:
+  - name: infrastructure-alerts
+    interval: 30s
+    rules:
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: prometheus
+        annotations:
+          summary: "Prometheus is down"
+          description: "Prometheus target is unreachable for more than 1 minute."
+
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: monitoring
+        annotations:
+          summary: "One or more scrape targets are down"
+          description: "Target {{ $labels.job }} ({{ $labels.instance }}) is down for more than 2 minutes."
+
+      - alert: PrometheusRuleEvaluationSlow
+        expr: prometheus_rule_group_last_duration_seconds > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: prometheus
+        annotations:
+          summary: "Prometheus rule evaluation is slow"
+          description: "Rule group {{ $labels.rule_group }} evaluation duration is above 5s for 5m."
+
+      - alert: PrometheusTSDBHeadSeriesHigh
+        expr: prometheus_tsdb_head_series > 200000
+        for: 10m
+        labels:
+          severity: warning
+          service: prometheus
+        annotations:
+          summary: "Prometheus TSDB head series is high"
+          description: "TSDB head series is above 200k; cardinality may be growing too fast."

@@ -1,0 +1,13 @@
+groups:
+  - name: slack-routing-example
+    interval: 30s
+    rules:
+      - alert: DemoSlackRoute
+        expr: vector(0)
+        labels:
+          service: demo
+          severity: info
+          notify: slack
+        annotations:
+          summary: "Demo route to Slack"
+          description: "This is disabled by expression vector(0); keep as template for notify=slack label usage."
