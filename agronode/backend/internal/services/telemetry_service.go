@@ -610,7 +610,7 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 			if value <= *trigger.Min {
 				if !state.MinActive {
 					targetDeviceID := resolveTargetDeviceID(reading.DeviceID, trigger)
-					service.sendActivation(context, targetDeviceID, sensorID, "below_min", "min", value, *trigger.Min)
+					service.sendActivation(context, reading.DeviceID, targetDeviceID, sensorID, "below_min", "min", value, *trigger.Min)
 					state.MinActive = true
 				}
 			} else {
@@ -622,7 +622,7 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 			if value >= *trigger.Max {
 				if !state.MaxActive {
 					targetDeviceID := resolveTargetDeviceID(reading.DeviceID, trigger)
-					service.sendActivation(context, targetDeviceID, sensorID, "above_max", "max", value, *trigger.Max)
+					service.sendActivation(context, reading.DeviceID, targetDeviceID, sensorID, "above_max", "max", value, *trigger.Max)
 					state.MaxActive = true
 				}
 			} else {
@@ -682,17 +682,8 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 							Timestamp: time.Now().UTC().Unix(),
 						}
 
-						if service.triggerPublisher != nil {
-							if err := service.triggerPublisher.PublishActivationCommand(context, cmd); err != nil {
-								if service.logger != nil {
-									service.logger.Error("fuzzy activation publish failed", "deviceId", targetDeviceID, "rule", rr.Name, "error", err)
-								}
-							} else if service.logger != nil {
-								service.logger.Info("fuzzy activation command published", "deviceId", targetDeviceID, "rule", rr.Name, "value", rr.Value, "strength", rr.Strength)
-							}
-						} else if service.logger != nil {
-							service.logger.Warn("fuzzy activation not sent: trigger publisher not configured", "deviceId", targetDeviceID, "rule", rr.Name)
-						}
+						reason := fmt.Sprintf("source_device=%s sensor=%s action=%s value=%.4f strength=%.4f", reading.DeviceID, sensorID, rr.Action.Type, rr.Value, rr.Strength)
+						service.publishActivationCommand(context, cmd, reason)
 					}
 				}
 			}
@@ -710,13 +701,7 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 	service.triggerMutex.Unlock()
 }
 
-func (service *TelemetryService) sendActivation(context context.Context, deviceID, sensorID, triggerType, limitType string, value, threshold float64) {
-	if service.triggerPublisher == nil {
-		if service.logger != nil {
-			service.logger.Warn("activation not sent: trigger publisher not configured", "deviceId", deviceID, "triggerType", triggerType)
-		}
-		return
-	}
+func (service *TelemetryService) sendActivation(context context.Context, sourceDeviceID, deviceID, sensorID, triggerType, limitType string, value, threshold float64) {
 
 	command := mqtt.ActivationCommand{
 		DeviceID:  deviceID,
@@ -729,15 +714,71 @@ func (service *TelemetryService) sendActivation(context context.Context, deviceI
 		Timestamp: time.Now().UTC().Unix(),
 	}
 
+	reason := fmt.Sprintf("source_device=%s sensor=%s limit=%s value=%.4f threshold=%.4f", sourceDeviceID, sensorID, limitType, value, threshold)
+	service.publishActivationCommand(context, command, reason)
+}
+
+func (service *TelemetryService) publishActivationCommand(context context.Context, command mqtt.ActivationCommand, reason string) {
+	if service.triggerPublisher == nil {
+		if service.logger != nil {
+			service.logger.Warn("activation not sent: trigger publisher not configured", "deviceId", command.DeviceID, "triggerType", command.Trigger)
+		}
+		service.persistExecutionAttempt(context, command, reason, models.IrrigationExecutionStatusFailed, errors.New("trigger publisher not configured"))
+		return
+	}
+
 	if err := service.triggerPublisher.PublishActivationCommand(context, command); err != nil {
 		if service.logger != nil {
-			service.logger.Error("activation publish failed", "deviceId", deviceID, "triggerType", triggerType, "error", err)
+			service.logger.Error("activation publish failed", "deviceId", command.DeviceID, "triggerType", command.Trigger, "error", err)
+		}
+		service.persistExecutionAttempt(context, command, reason, models.IrrigationExecutionStatusFailed, err)
+		return
+	}
+
+	service.persistExecutionAttempt(context, command, reason, models.IrrigationExecutionStatusSucceeded, nil)
+
+	if service.logger != nil {
+		service.logger.Info("activation command published", "deviceId", command.DeviceID, "triggerType", command.Trigger, "value", command.Value, "threshold", command.Threshold)
+	}
+}
+
+func (service *TelemetryService) persistExecutionAttempt(context context.Context, command mqtt.ActivationCommand, reason, status string, attemptError error) {
+	if service.triggerRepository == nil {
+		return
+	}
+
+	triggeredAt := time.Now().UTC()
+	if command.Timestamp > 0 {
+		triggeredAt = time.Unix(command.Timestamp, 0).UTC()
+	}
+
+	execution := models.IrrigationExecution{
+		RuleID:      command.Trigger,
+		DeviceID:    command.DeviceID,
+		TriggeredAt: triggeredAt,
+		Reason:      reason,
+		Status:      status,
+	}
+
+	if attemptError != nil {
+		errorMessage := attemptError.Error()
+		execution.ErrorMessage = &errorMessage
+	}
+
+	if err := service.triggerRepository.SaveExecution(context, execution); err != nil {
+		if service.logger != nil {
+			service.logger.Warn("persist trigger execution failed", "deviceId", command.DeviceID, "ruleId", command.Trigger, "error", err)
 		}
 		return
 	}
 
 	if service.logger != nil {
-		service.logger.Info("activation command published", "deviceId", deviceID, "triggerType", triggerType, "value", value, "threshold", threshold)
+		if execution.ErrorMessage != nil {
+			service.logger.Info("trigger execution persisted", "deviceId", execution.DeviceID, "ruleId", execution.RuleID, "status", execution.Status, "reason", execution.Reason, "error", *execution.ErrorMessage)
+			return
+		}
+
+		service.logger.Info("trigger execution persisted", "deviceId", execution.DeviceID, "ruleId", execution.RuleID, "status", execution.Status, "reason", execution.Reason)
 	}
 }
 

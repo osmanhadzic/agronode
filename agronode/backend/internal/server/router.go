@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"agronode/backend/internal/handlers"
 	"agronode/backend/internal/realtime"
@@ -11,7 +12,7 @@ import (
 
 func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.AuthService, telemetryService handlers.TelemetryQueryService, streamControlService handlers.DeviceStreamControlService, triggerService handlers.TriggerService, deviceService handlers.DeviceRegistrationService, organizationService handlers.OrganizationService, realtimeHub *realtime.Hub) *gin.Engine {
 	router := gin.New()
-	router.Use(gin.Recovery(), gin.Logger())
+	router.Use(gin.Recovery(), requestLoggerMiddleware(logger))
 	router.Use(corsMiddleware())
 
 	publicAPI := router.Group("/api")
@@ -29,6 +30,38 @@ func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.A
 	handlers.RegisterRealtimeRoutes(router, logger, realtimeHub)
 
 	return router
+}
+
+func requestLoggerMiddleware(logger *slog.Logger) gin.HandlerFunc {
+	return func(context *gin.Context) {
+		startedAt := time.Now()
+		path := context.Request.URL.Path
+		query := context.Request.URL.RawQuery
+
+		context.Next()
+
+		latency := time.Since(startedAt)
+		statusCode := context.Writer.Status()
+		fields := []any{
+			"method", context.Request.Method,
+			"path", path,
+			"query", query,
+			"status", statusCode,
+			"latencyMs", latency.Milliseconds(),
+			"clientIp", context.ClientIP(),
+			"userAgent", context.Request.UserAgent(),
+			"bytes", context.Writer.Size(),
+		}
+
+		switch {
+		case statusCode >= http.StatusInternalServerError:
+			logger.Error("http request completed", fields...)
+		case statusCode >= http.StatusBadRequest:
+			logger.Warn("http request completed", fields...)
+		default:
+			logger.Info("http request completed", fields...)
+		}
+	}
 }
 
 func corsMiddleware() gin.HandlerFunc {

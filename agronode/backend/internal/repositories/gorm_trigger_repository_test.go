@@ -61,6 +61,22 @@ func newTestTriggerDB(t *testing.T) *gorm.DB {
 		t.Fatalf("create sensor_triggers table: %v", err)
 	}
 
+	if err := db.Exec(`
+		CREATE TABLE irrigation_executions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			rule_id TEXT NOT NULL,
+			asset_unit_id INTEGER,
+			device_id TEXT NOT NULL,
+			triggered_at DATETIME NOT NULL,
+			reason TEXT NOT NULL,
+			status TEXT NOT NULL,
+			error_message TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+	`).Error; err != nil {
+		t.Fatalf("create irrigation_executions table: %v", err)
+	}
+
 	return db
 }
 
@@ -140,6 +156,46 @@ func TestGormTriggerRepository_DeleteByDeviceAndSensor(t *testing.T) {
 			t.Fatalf("expected ErrNotFound after delete, got %v", err)
 		}
 	})
+}
+
+func TestGormTriggerRepository_SaveExecution(t *testing.T) {
+	db := newTestTriggerDB(t)
+	repository := NewGormTriggerRepository(db)
+
+	orgID := uint(1)
+	assetUnitID := uint(9)
+	device := models.Device{DeviceID: "pump-node-1", OrganizationID: &orgID, ZoneID: &assetUnitID}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+
+	message := "broker unavailable"
+	execution := models.IrrigationExecution{
+		RuleID:       "above_max",
+		DeviceID:     "pump-node-1",
+		TriggeredAt:  time.Now().UTC(),
+		Reason:       "source_device=esp32-lab sensor=co2 limit=max value=800.0000 threshold=700.0000",
+		Status:       models.IrrigationExecutionStatusFailed,
+		ErrorMessage: &message,
+	}
+
+	ctx := tenancy.WithOrganizationID(context.Background(), orgID)
+	if err := repository.SaveExecution(ctx, execution); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	var saved models.IrrigationExecution
+	if err := db.Where("rule_id = ?", "above_max").First(&saved).Error; err != nil {
+		t.Fatalf("read saved execution: %v", err)
+	}
+
+	if saved.AssetUnitID == nil || *saved.AssetUnitID != assetUnitID {
+		t.Fatalf("expected resolved asset unit id %d, got %v", assetUnitID, saved.AssetUnitID)
+	}
+
+	if saved.ErrorMessage == nil || *saved.ErrorMessage != message {
+		t.Fatalf("expected error message %q, got %v", message, saved.ErrorMessage)
+	}
 }
 
 func floatPtr(value float64) *float64 {

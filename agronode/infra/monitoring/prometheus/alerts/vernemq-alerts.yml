@@ -1,0 +1,33 @@
+groups:
+  - name: vernemq-alerts
+    interval: 30s
+    rules:
+      - alert: VerneMQDown
+        expr: up{job="vernemq"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: vernemq
+        annotations:
+          summary: "VerneMQ is down"
+          description: "Prometheus cannot scrape VerneMQ metrics endpoint for more than 1 minute."
+
+      - alert: VerneMQNoPublishTraffic
+        expr: sum(rate(mqtt_publish_received[5m])) < 0.01
+        for: 5m
+        labels:
+          severity: warning
+          service: vernemq
+        annotations:
+          summary: "VerneMQ publish traffic is near zero"
+          description: "Incoming MQTT publish rate is near zero for 5 minutes. Check publishers and broker health."
+
+      - alert: VerneMQSocketCloseSpike
+        expr: sum(rate(socket_close[5m])) > (sum(rate(socket_open[5m])) * 1.5)
+        for: 5m
+        labels:
+          severity: warning
+          service: vernemq
+        annotations:
+          summary: "VerneMQ socket close spike detected"
+          description: "Socket close rate is significantly higher than open rate over 5 minutes."

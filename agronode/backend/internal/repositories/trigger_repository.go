@@ -11,4 +11,5 @@ type TriggerRepository interface {
 	GetByDeviceAndSensor(context context.Context, deviceID, sensorID string) (models.SensorTrigger, error)
 	ListByDeviceID(context context.Context, deviceID string) (map[string]models.SensorTrigger, error)
 	DeleteByDeviceAndSensor(context context.Context, deviceID, sensorID string) error
+	SaveExecution(context context.Context, execution models.IrrigationExecution) error
 }

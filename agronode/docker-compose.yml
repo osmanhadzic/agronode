@@ -30,9 +30,26 @@ services:
       - "9090:9090"
     volumes:
       - ./infra/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/monitoring/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus-data:/prometheus
     depends_on:
       - vernemq
+      - alertmanager
+    networks:
+      - agronode-net
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: agronode-alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./infra/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
     networks:
       - agronode-net
 
@@ -44,6 +61,7 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/agronode-vernemq-observability.json
     ports:
       - "3001:3000"
     volumes:
@@ -52,6 +70,36 @@ services:
       - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
+      - loki
+    networks:
+      - agronode-net
+
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: agronode-loki
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infra/monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks:
+      - agronode-net
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: agronode-promtail
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./infra/monitoring/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail-positions:/var/lib/promtail
+    depends_on:
+      - loki
     networks:
       - agronode-net
 
@@ -155,3 +203,6 @@ volumes:
   vernemq-data:
   prometheus-data:
   grafana-data:
+  loki-data:
+  promtail-positions:
+  alertmanager-data:

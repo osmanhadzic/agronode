@@ -73,6 +73,36 @@ type triggerPublisherStub struct {
 	err      error
 }
 
+type triggerRepositoryStub struct {
+	executions       []models.IrrigationExecution
+	saveExecutionErr error
+}
+
+func (stub *triggerRepositoryStub) Upsert(context.Context, string, string, models.SensorTrigger) error {
+	return nil
+}
+
+func (stub *triggerRepositoryStub) GetByDeviceAndSensor(context.Context, string, string) (models.SensorTrigger, error) {
+	return models.SensorTrigger{}, repositories.ErrNotFound
+}
+
+func (stub *triggerRepositoryStub) ListByDeviceID(context.Context, string) (map[string]models.SensorTrigger, error) {
+	return map[string]models.SensorTrigger{}, nil
+}
+
+func (stub *triggerRepositoryStub) DeleteByDeviceAndSensor(context.Context, string, string) error {
+	return nil
+}
+
+func (stub *triggerRepositoryStub) SaveExecution(_ context.Context, execution models.IrrigationExecution) error {
+	if stub.saveExecutionErr != nil {
+		return stub.saveExecutionErr
+	}
+
+	stub.executions = append(stub.executions, execution)
+	return nil
+}
+
 func (publisher *triggerPublisherStub) PublishActivationCommand(_ context.Context, command mqtt.ActivationCommand) error {
 	if publisher.err != nil {
 		return publisher.err
@@ -622,4 +652,98 @@ func TestTelemetryService_GenericTriggerActivation(t *testing.T) {
 	if len(publisher.commands) != 1 {
 		t.Fatalf("expected still 1 activation command while above max, got %d", len(publisher.commands))
 	}
+}
+
+func TestTelemetryService_PersistsExecutionAttempts(t *testing.T) {
+	t.Run("stores succeeded execution status", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		publisher := &triggerPublisherStub{}
+		triggerRepository := &triggerRepositoryStub{}
+		service := NewTelemetryService(repository, nil)
+		service.SetTriggerPublisher(publisher)
+		service.SetTriggerRepository(triggerRepository)
+
+		maxValue := 700.0
+		err := service.SetSensorTrigger(context.Background(), "esp32-lab", "co2", models.SensorTrigger{Max: &maxValue})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		reading := models.TelemetryReading{
+			DeviceID: "esp32-lab",
+			SensorID: "co2",
+			Sensors: map[string]float64{
+				"co2": 800,
+			},
+			CreatedAt: time.Now().UTC(),
+		}
+
+		err = service.ProcessTelemetry(context.Background(), reading)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(triggerRepository.executions) != 1 {
+			t.Fatalf("expected 1 persisted execution, got %d", len(triggerRepository.executions))
+		}
+
+		execution := triggerRepository.executions[0]
+		if execution.Status != models.IrrigationExecutionStatusSucceeded {
+			t.Fatalf("expected status %q, got %q", models.IrrigationExecutionStatusSucceeded, execution.Status)
+		}
+
+		if execution.RuleID != "above_max" {
+			t.Fatalf("expected rule id %q, got %q", "above_max", execution.RuleID)
+		}
+
+		if execution.ErrorMessage != nil {
+			t.Fatalf("expected nil error message for succeeded execution, got %q", *execution.ErrorMessage)
+		}
+	})
+
+	t.Run("stores failed execution error details", func(t *testing.T) {
+		repository := &telemetryRepositoryStub{}
+		publisher := &triggerPublisherStub{err: errors.New("broker unavailable")}
+		triggerRepository := &triggerRepositoryStub{}
+		service := NewTelemetryService(repository, nil)
+		service.SetTriggerPublisher(publisher)
+		service.SetTriggerRepository(triggerRepository)
+
+		maxValue := 700.0
+		err := service.SetSensorTrigger(context.Background(), "esp32-lab", "co2", models.SensorTrigger{Max: &maxValue})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		reading := models.TelemetryReading{
+			DeviceID: "esp32-lab",
+			SensorID: "co2",
+			Sensors: map[string]float64{
+				"co2": 800,
+			},
+			CreatedAt: time.Now().UTC(),
+		}
+
+		err = service.ProcessTelemetry(context.Background(), reading)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(triggerRepository.executions) != 1 {
+			t.Fatalf("expected 1 persisted execution, got %d", len(triggerRepository.executions))
+		}
+
+		execution := triggerRepository.executions[0]
+		if execution.Status != models.IrrigationExecutionStatusFailed {
+			t.Fatalf("expected status %q, got %q", models.IrrigationExecutionStatusFailed, execution.Status)
+		}
+
+		if execution.ErrorMessage == nil {
+			t.Fatalf("expected execution error details to be persisted")
+		}
+
+		if *execution.ErrorMessage != "broker unavailable" {
+			t.Fatalf("expected error message %q, got %q", "broker unavailable", *execution.ErrorMessage)
+		}
+	})
 }

@@ -11,6 +11,9 @@ import (
 type Config struct {
 	AppPort                     string
 	LogLevel                    string
+	LogFormat                   string
+	LogService                  string
+	LogEnvironment              string
 	SessionSecret               string
 	FrontendLoginEmail          string
 	FrontendLoginPassword       string
@@ -32,6 +35,9 @@ func Load() Config {
 	return Config{
 		AppPort:                     getEnv("APP_PORT", "8080"),
 		LogLevel:                    getEnv("LOG_LEVEL", "info"),
+		LogFormat:                   getEnv("LOG_FORMAT", "json"),
+		LogService:                  getEnv("LOG_SERVICE", "agronode-backend"),
+		LogEnvironment:              getEnv("LOG_ENV", "dev"),
 		SessionSecret:               getEnv("SESSION_SECRET", "dev-session-secret"),
 		FrontendLoginEmail:          getEnv("FRONTEND_LOGIN_EMAIL", "admin@agronode.local"),
 		FrontendLoginPassword:       getEnv("FRONTEND_LOGIN_PASSWORD", "admin123"),
@@ -50,7 +56,7 @@ func Load() Config {
 	}
 }
 
-func NewLogger(level string) *slog.Logger {
+func NewLogger(level, format, service, environment string) *slog.Logger {
 	logLevel := slog.LevelInfo
 
 	switch strings.ToLower(level) {
@@ -62,8 +68,22 @@ func NewLogger(level string) *slog.Logger {
 		logLevel = slog.LevelError
 	}
 
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
-	return slog.New(handler)
+	var handler slog.Handler
+	if strings.EqualFold(strings.TrimSpace(format), "text") {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
+	}
+
+	logger := slog.New(handler)
+	if strings.TrimSpace(service) != "" {
+		logger = logger.With("service", strings.TrimSpace(service))
+	}
+	if strings.TrimSpace(environment) != "" {
+		logger = logger.With("env", strings.TrimSpace(environment))
+	}
+
+	return logger
 }
 
 func getEnv(key, fallback string) string {

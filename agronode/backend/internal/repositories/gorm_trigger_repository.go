@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"agronode/backend/internal/models"
@@ -160,6 +161,41 @@ func (repository *GormTriggerRepository) DeleteByDeviceAndSensor(context context
 	}
 
 	return nil
+}
+
+func (repository *GormTriggerRepository) SaveExecution(context context.Context, execution models.IrrigationExecution) error {
+	entity := execution
+
+	entity.RuleID = strings.TrimSpace(entity.RuleID)
+	entity.DeviceID = strings.TrimSpace(entity.DeviceID)
+	entity.Reason = strings.TrimSpace(entity.Reason)
+	entity.Status = strings.TrimSpace(entity.Status)
+
+	if entity.AssetUnitID == nil {
+		deviceScope := repository.database.WithContext(context).
+			Model(&models.Device{}).
+			Select("asset_unit_id").
+			Where("device_id = ?", entity.DeviceID)
+
+		if organizationID, ok := organizationIDFromContext(context); ok {
+			deviceScope = deviceScope.Where("organization_id = ?", organizationID)
+		}
+
+		var device models.Device
+		if err := deviceScope.First(&device).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		} else {
+			entity.AssetUnitID = device.ZoneID
+		}
+	}
+
+	if entity.TriggeredAt.IsZero() {
+		entity.TriggeredAt = time.Now().UTC()
+	}
+
+	return repository.database.WithContext(context).Create(&entity).Error
 }
 
 func valueOrEmpty(value *string) string {

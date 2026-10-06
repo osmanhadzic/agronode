@@ -23,7 +23,7 @@ import (
 
 func main() {
 	cfg := config.Load()
-	logger := config.NewLogger(cfg.LogLevel)
+	logger := config.NewLogger(cfg.LogLevel, cfg.LogFormat, cfg.LogService, cfg.LogEnvironment)
 
 	startupContext, startupCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer startupCancel()

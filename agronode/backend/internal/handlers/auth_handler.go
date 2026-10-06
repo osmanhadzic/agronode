@@ -41,6 +41,9 @@ func RegisterAuthRoutes(api *gin.RouterGroup, logger *slog.Logger, service AuthS
 func (handler *authHandler) login(context *gin.Context) {
 	var request loginRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
+		if handler.logger != nil {
+			handler.logger.Warn("login request invalid", "error", err)
+		}
 		context.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
 		return
 	}
@@ -48,6 +51,9 @@ func (handler *authHandler) login(context *gin.Context) {
 	claims, token, err := handler.service.Login(strings.TrimSpace(request.Email), request.Password, time.Now().UTC())
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
+			if handler.logger != nil {
+				handler.logger.Warn("login rejected", "email", strings.TrimSpace(request.Email), "reason", "invalid credentials")
+			}
 			context.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 			return
 		}
@@ -55,6 +61,10 @@ func (handler *authHandler) login(context *gin.Context) {
 		handler.logger.Error("login failed", "error", err)
 		context.JSON(http.StatusInternalServerError, gin.H{"error": "failed to login"})
 		return
+	}
+
+	if handler.logger != nil {
+		handler.logger.Info("login succeeded", "email", claims.Email, "organizationId", claims.OrganizationID, "role", claims.Role)
 	}
 
 	context.JSON(http.StatusOK, loginResponse{
