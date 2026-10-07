@@ -21,6 +21,7 @@ import { DateFilter } from '../components/DateFilter'
 import { DataModeSelector } from '../components/DataModeSelector'
 import { DeviceMetaPanel } from '../components/DeviceMetaPanel'
 import { DeviceSelector } from '../components/DeviceSelector'
+import { AdminChatPanel } from '../components/AdminChatPanel'
 import { SensorCard } from '../components/SensorCard'
 import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector'
 import FuzzyTriggerEditor from '../components/FuzzyTriggerEditor'
@@ -192,7 +193,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
   const [triggerEvents, setTriggerEvents] = useState<TriggerEvent[]>([])
   const [toastTriggerEvent, setToastTriggerEvent] = useState<TriggerEvent | null>(null)
   const [previewModal, setPreviewModal] = useState<{ open: boolean; sensorId?: string; loading: boolean; result?: any; error?: string }>({ open: false, loading: false })
-  const [activeTab, setActiveTab] = useState<'overview' | 'telemetry' | 'sensors' | 'triggers'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'telemetry' | 'sensors' | 'triggers' | 'chat'>('overview')
   const triggerActivationState = useRef<Record<string, { min: boolean; max: boolean }>>({})
   const selectedDeviceRef = useRef('')
   const deviceSensorIdsRef = useRef<Set<string>>(new Set())
@@ -203,6 +204,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
     { id: 'telemetry', label: 'Telemetrija' },
     { id: 'sensors', label: 'Senzori' },
     { id: 'triggers', label: 'Triggeri' },
+    ...(isAdmin ? [{ id: 'chat', label: 'Chat' } as const] : []),
   ] as const
 
   useEffect(() => {
@@ -1792,6 +1794,12 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
               )}
             </div>
           </section>
+        </section>
+      )}
+
+      {activeTab === 'chat' && isAdmin && (
+        <section className="dashboard-tab-panel">
+          <AdminChatPanel />
         </section>
       )}
 

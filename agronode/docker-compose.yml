@@ -146,11 +146,34 @@ services:
       MQTT_TOPIC: ${MQTT_TOPIC:-agronode/#}
       MQTT_ACTIVATION_TOPIC_TEMPLATE: ${MQTT_ACTIVATION_TOPIC_TEMPLATE:-agronode/%s/activation}
 
+      # Admin chat LLM (optional)
+      ADMIN_CHAT_LLM_ENABLED: ${ADMIN_CHAT_LLM_ENABLED:-false}
+      ADMIN_CHAT_LLM_PROVIDER: ${ADMIN_CHAT_LLM_PROVIDER:-ollama}
+      ADMIN_CHAT_LLM_BASE_URL: ${ADMIN_CHAT_LLM_BASE_URL:-http://ollama:11434}
+      ADMIN_CHAT_LLM_API_KEY: ${ADMIN_CHAT_LLM_API_KEY:-}
+      ADMIN_CHAT_LLM_MODEL: ${ADMIN_CHAT_LLM_MODEL:-llama3.2:1b}
+      ADMIN_CHAT_LLM_CHAT_COMPLETIONS_PATH: ${ADMIN_CHAT_LLM_CHAT_COMPLETIONS_PATH:-/v1/chat/completions}
+      ADMIN_CHAT_LLM_SYSTEM_PROMPT: ${ADMIN_CHAT_LLM_SYSTEM_PROMPT:-You are AgroNode Admin Assistant. Keep answers short, practical, and focused on device telemetry, triggers, MQTT, and operations.}
+      ADMIN_CHAT_LLM_TIMEOUT_SECONDS: ${ADMIN_CHAT_LLM_TIMEOUT_SECONDS:-20}
+
     ports:
       - "8080:8080"
     depends_on:
       - vernemq
       - postgres
+    networks:
+      - agronode-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agronode-ollama
+    restart: unless-stopped
+    profiles:
+      - llm
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
     networks:
       - agronode-net
 
@@ -179,6 +202,14 @@ services:
       AGRONODE_MCP_REST_BASE_URL: ${AGRONODE_MCP_REST_BASE_URL:-http://backend:8080}
       AGRONODE_MCP_ORGANIZATION_ID: ${AGRONODE_MCP_ORGANIZATION_ID:-1}
       AGRONODE_MCP_TIMEOUT_SECONDS: ${AGRONODE_MCP_TIMEOUT_SECONDS:-15}
+      AGRONODE_MCP_LLM_ENABLED: ${AGRONODE_MCP_LLM_ENABLED:-false}
+      AGRONODE_MCP_LLM_PROVIDER: ${AGRONODE_MCP_LLM_PROVIDER:-ollama}
+      AGRONODE_MCP_LLM_BASE_URL: ${AGRONODE_MCP_LLM_BASE_URL:-http://ollama:11434}
+      AGRONODE_MCP_LLM_API_KEY: ${AGRONODE_MCP_LLM_API_KEY:-}
+      AGRONODE_MCP_LLM_MODEL: ${AGRONODE_MCP_LLM_MODEL:-llama3.2:1b}
+      AGRONODE_MCP_LLM_CHAT_COMPLETIONS_PATH: ${AGRONODE_MCP_LLM_CHAT_COMPLETIONS_PATH:-/v1/chat/completions}
+      AGRONODE_MCP_LLM_SYSTEM_PROMPT: ${AGRONODE_MCP_LLM_SYSTEM_PROMPT:-You are AgroNode MCP assistant. Provide concise, practical answers for IoT operations.}
+      AGRONODE_MCP_LLM_TIMEOUT_SECONDS: ${AGRONODE_MCP_LLM_TIMEOUT_SECONDS:-20}
     stdin_open: true
     tty: true
     depends_on:
@@ -224,3 +255,4 @@ volumes:
   loki-data:
   promtail-positions:
   alertmanager-data:
+  ollama-data:

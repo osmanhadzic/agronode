@@ -29,6 +29,14 @@ type Config struct {
 	DeviceInactivityMin         string
 	DeviceWorkerInterval        string
 	MQTTActivationTopicTemplate string
+	AdminChatLLMEnabled         bool
+	AdminChatLLMProvider        string
+	AdminChatLLMBaseURL         string
+	AdminChatLLMAPIKey          string
+	AdminChatLLMModel           string
+	AdminChatLLMChatPath        string
+	AdminChatLLMSystemPrompt    string
+	AdminChatLLMTimeoutSeconds  int
 }
 
 func Load() Config {
@@ -53,6 +61,14 @@ func Load() Config {
 		DeviceInactivityMin:         getEnv("DEVICE_INACTIVITY_MIN", "15"),
 		DeviceWorkerInterval:        getEnv("DEVICE_WORKER_INTERVAL", "1"),
 		MQTTActivationTopicTemplate: getEnv("MQTT_ACTIVATION_TOPIC_TEMPLATE", "agronode/%s/activation"),
+		AdminChatLLMEnabled:         getEnvBool("ADMIN_CHAT_LLM_ENABLED", false),
+		AdminChatLLMProvider:        getEnv("ADMIN_CHAT_LLM_PROVIDER", "ollama"),
+		AdminChatLLMBaseURL:         getEnv("ADMIN_CHAT_LLM_BASE_URL", "http://ollama:11434"),
+		AdminChatLLMAPIKey:          getEnv("ADMIN_CHAT_LLM_API_KEY", ""),
+		AdminChatLLMModel:           getEnv("ADMIN_CHAT_LLM_MODEL", "llama3.2:1b"),
+		AdminChatLLMChatPath:        getEnv("ADMIN_CHAT_LLM_CHAT_COMPLETIONS_PATH", "/v1/chat/completions"),
+		AdminChatLLMSystemPrompt:    getEnv("ADMIN_CHAT_LLM_SYSTEM_PROMPT", "You are AgroNode Admin Assistant. Keep answers short, practical, and focused on device telemetry, triggers, MQTT, and operations."),
+		AdminChatLLMTimeoutSeconds:  getEnvInt("ADMIN_CHAT_LLM_TIMEOUT_SECONDS", 20),
 	}
 }
 
@@ -121,4 +137,34 @@ func getEnvDurationHours(key string, fallbackHours int) time.Duration {
 	}
 
 	return time.Duration(parsed) * time.Hour
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if value == "" {
+		return fallback
+	}
+
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
+func getEnvInt(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+
+	return parsed
 }

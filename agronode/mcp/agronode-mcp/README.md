@@ -25,6 +25,7 @@ mcp/agronode-mcp/
 - `get_device_status`
 - `get_latest_telemetry`
 - `get_telemetry_history`
+- `ask_llm`
 
 All requests are organization-scoped with `X-Organization-ID`.
 
@@ -40,6 +41,32 @@ Environment variables (override `appsettings.json`):
 - `AGRONODE_MCP_SERVER_NAME` (default: `agronode-mcp-dotnet`)
 - `AGRONODE_MCP_SERVER_VERSION` (default: `0.1.0`)
 - `AGRONODE_MCP_PROTOCOL_VERSION` (default: `2024-11-05`)
+- `AGRONODE_MCP_LLM_ENABLED` (default: `false`)
+- `AGRONODE_MCP_LLM_PROVIDER` (default: `ollama`)
+- `AGRONODE_MCP_LLM_BASE_URL` (default: `http://localhost:11434`)
+- `AGRONODE_MCP_LLM_API_KEY` (default: empty)
+- `AGRONODE_MCP_LLM_MODEL` (default: `llama3.2:1b`)
+- `AGRONODE_MCP_LLM_CHAT_COMPLETIONS_PATH` (default: `/v1/chat/completions`)
+- `AGRONODE_MCP_LLM_SYSTEM_PROMPT` (default: built-in AgroNode assistant prompt)
+- `AGRONODE_MCP_LLM_TIMEOUT_SECONDS` (default: `20`)
+
+When `AGRONODE_MCP_LLM_ENABLED=true`, `ask_llm` becomes usable through MCP `tools/call`.
+
+Supported providers:
+
+- `ollama` (local or remote Ollama)
+- `openai` / `openai-compatible` / `external` (cloud or gateway exposing OpenAI Chat Completions API)
+
+Example external LLM configuration:
+
+```bash
+AGRONODE_MCP_LLM_ENABLED=true
+AGRONODE_MCP_LLM_PROVIDER=openai
+AGRONODE_MCP_LLM_BASE_URL=https://api.openai.com
+AGRONODE_MCP_LLM_API_KEY=<your_api_key>
+AGRONODE_MCP_LLM_MODEL=gpt-4o-mini
+AGRONODE_MCP_LLM_CHAT_COMPLETIONS_PATH=/v1/chat/completions
+```
 
 ---
 

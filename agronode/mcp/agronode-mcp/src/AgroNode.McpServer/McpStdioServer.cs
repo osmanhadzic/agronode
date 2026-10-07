@@ -6,7 +6,7 @@ using AgroNode.McpServer.Options;
 
 namespace AgroNode.McpServer;
 
-internal sealed class McpStdioServer(IAgroNodeApiClient client, McpOptions options)
+internal sealed class McpStdioServer(IAgroNodeApiClient client, ILlmClient llmClient, McpOptions options)
 {
     public async Task RunAsync(Stream input, Stream output, CancellationToken cancellationToken)
     {
@@ -284,6 +284,30 @@ internal sealed class McpStdioServer(IAgroNodeApiClient client, McpOptions optio
                 ["required"] = new JsonArray("device_id", "from", "to"),
                 ["additionalProperties"] = false
             }
+        },
+        new JsonObject
+        {
+            ["name"] = "ask_llm",
+            ["description"] = "Asks configured LLM provider and returns a concise answer.",
+            ["inputSchema"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["prompt"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["minLength"] = 1
+                    },
+                    ["system_prompt"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Optional system instruction override."
+                    }
+                },
+                ["required"] = new JsonArray("prompt"),
+                ["additionalProperties"] = false
+            }
         }
     ];
 
@@ -313,6 +337,7 @@ internal sealed class McpStdioServer(IAgroNodeApiClient client, McpOptions optio
                 OptionalString(arguments, "sensor_id"),
                 OptionalInt(arguments, "limit"),
                 cancellationToken),
+            "ask_llm" => await HandleAskLlmAsync(arguments, cancellationToken),
             _ => throw new InvalidOperationException($"Unknown tool '{name}'.")
         };
 
@@ -328,6 +353,19 @@ internal sealed class McpStdioServer(IAgroNodeApiClient client, McpOptions optio
             },
             ["isError"] = false
         };
+    }
+
+    private async Task<string> HandleAskLlmAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        if (!llmClient.IsEnabled)
+        {
+            throw new InvalidOperationException("LLM tool is disabled. Set AGRONODE_MCP_LLM_ENABLED=true.");
+        }
+
+        var prompt = RequireString(arguments, "prompt");
+        var systemPrompt = OptionalString(arguments, "system_prompt");
+
+        return await llmClient.AskAsync(prompt, systemPrompt, cancellationToken);
     }
 
     private static string RequireString(JsonObject? source, string field)
