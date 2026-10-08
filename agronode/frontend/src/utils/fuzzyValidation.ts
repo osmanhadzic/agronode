@@ -102,6 +102,21 @@ export function validateFuzzyConfig(cfg: any): ValidationResult {
         ruleActionInvalid.push(rIdx)
         return
       }
+
+      if (r.action.type === 'http') {
+        const url = typeof r.action.url === 'string' ? r.action.url.trim() : ''
+        if (!url) {
+          errors.push(`Rule ${r.name} http action requires URL`)
+          ruleActionInvalid.push(rIdx)
+          return
+        }
+
+        if (!/^https?:\/\//i.test(url)) {
+          errors.push(`Rule ${r.name} http action URL must start with http:// or https://`)
+          ruleActionInvalid.push(rIdx)
+          return
+        }
+      }
     })
   }
 

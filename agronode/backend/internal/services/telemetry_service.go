@@ -1,11 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +28,7 @@ type TelemetryService struct {
 	presenceUpdater        DevicePresenceUpdater
 	sensorDiscoveryUpdater DeviceSensorDiscoveryUpdater
 	metadataUpdater        DeviceMetadataUpdater
+	httpClient             *http.Client
 	triggers               map[string]map[string]models.SensorTrigger
 	triggerState           map[string]map[string]sensorTriggerState
 	triggerMutex           sync.RWMutex
@@ -54,6 +57,7 @@ func NewTelemetryService(repository repositories.TelemetryRepository, logger *sl
 	return &TelemetryService{
 		repository:   repository,
 		logger:       logger,
+		httpClient:   &http.Client{Timeout: 5 * time.Second},
 		triggers:     make(map[string]map[string]models.SensorTrigger),
 		triggerState: make(map[string]map[string]sensorTriggerState),
 	}
@@ -81,6 +85,10 @@ func (service *TelemetryService) SetTriggerPublisher(publisher TriggerCommandPub
 
 func (service *TelemetryService) SetTriggerRepository(repository repositories.TriggerRepository) {
 	service.triggerRepository = repository
+}
+
+func (service *TelemetryService) SetHTTPClient(client *http.Client) {
+	service.httpClient = client
 }
 
 // SetSensorRepository sets the optional sensor repository used to persist trigger sensors.
@@ -670,6 +678,11 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 
 						targetDeviceID := resolveTargetDeviceID(reading.DeviceID, trigger)
 
+						if rr.Action.Type == "http" {
+							service.sendFuzzyHTTPAction(context, reading.DeviceID, targetDeviceID, sensorID, rr, inputs, eval.Memberships)
+							continue
+						}
+
 						// Use trigger name including rule for clarity
 						cmd := mqtt.ActivationCommand{
 							DeviceID:  targetDeviceID,
@@ -699,6 +712,90 @@ func (service *TelemetryService) evaluateSensorTriggers(context context.Context,
 		service.triggerState[reading.DeviceID][sensorID] = state
 	}
 	service.triggerMutex.Unlock()
+}
+
+func (service *TelemetryService) sendFuzzyHTTPAction(context context.Context, sourceDeviceID, targetDeviceID, sensorID string, ruleResult fuzzy.RuleResult, inputs map[string]float64, memberships map[string]map[string]float64) {
+	actionURL := strings.TrimSpace(ruleResult.Action.URL)
+	if actionURL == "" {
+		if service.logger != nil {
+			service.logger.Warn("http action skipped: empty url", "sourceDeviceId", sourceDeviceID, "sensorId", sensorID, "rule", ruleResult.Name)
+		}
+		return
+	}
+
+	method := strings.ToUpper(strings.TrimSpace(ruleResult.Action.Method))
+	if method == "" {
+		method = http.MethodPost
+	}
+
+	payload := map[string]any{
+		"sourceDeviceId": sourceDeviceID,
+		"targetDeviceId": targetDeviceID,
+		"sensorId":       sensorID,
+		"rule":           ruleResult.Name,
+		"strength":       ruleResult.Strength,
+		"value":          ruleResult.Value,
+		"action":         ruleResult.Action,
+		"inputs":         inputs,
+		"memberships":    memberships,
+		"timestamp":      time.Now().UTC().Unix(),
+	}
+
+	body := strings.TrimSpace(ruleResult.Action.Body)
+	if body == "" {
+		buf, err := json.Marshal(payload)
+		if err != nil {
+			if service.logger != nil {
+				service.logger.Error("http action payload marshal failed", "url", actionURL, "rule", ruleResult.Name, "error", err)
+			}
+			return
+		}
+		body = string(buf)
+	}
+
+	req, err := http.NewRequestWithContext(context, method, actionURL, bytes.NewBufferString(body))
+	if err != nil {
+		if service.logger != nil {
+			service.logger.Error("http action request build failed", "url", actionURL, "rule", ruleResult.Name, "error", err)
+		}
+		return
+	}
+
+	hasContentType := false
+	for key, value := range ruleResult.Action.Headers {
+		req.Header.Set(key, value)
+		if strings.EqualFold(key, "content-type") {
+			hasContentType = true
+		}
+	}
+	if !hasContentType {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	client := service.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+
+	response, err := client.Do(req)
+	if err != nil {
+		if service.logger != nil {
+			service.logger.Error("http action request failed", "url", actionURL, "method", method, "rule", ruleResult.Name, "error", err)
+		}
+		return
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if service.logger != nil {
+			service.logger.Warn("http action returned non-success status", "url", actionURL, "method", method, "rule", ruleResult.Name, "status", response.StatusCode)
+		}
+		return
+	}
+
+	if service.logger != nil {
+		service.logger.Info("http action sent", "url", actionURL, "method", method, "rule", ruleResult.Name, "status", response.StatusCode)
+	}
 }
 
 func (service *TelemetryService) sendActivation(context context.Context, sourceDeviceID, deviceID, sensorID, triggerType, limitType string, value, threshold float64) {

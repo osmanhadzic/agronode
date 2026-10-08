@@ -3,6 +3,8 @@ package fuzzy
 import (
     "errors"
     "fmt"
+    "net/url"
+    "strings"
 )
 
 var ErrInvalidFuzzy = errors.New("invalid fuzzy trigger")
@@ -66,6 +68,23 @@ func ValidateFuzzyTrigger(trigger FuzzyTrigger) error {
             // membership must exist
             if _, ok := nameToSensors[cond.Membership]; !ok {
                 return fmt.Errorf("%w: rule %q references unknown membership %q", ErrInvalidFuzzy, rule.Name, cond.Membership)
+            }
+        }
+
+        actionType := strings.TrimSpace(rule.Action.Type)
+        if actionType == "http" {
+            actionURL := strings.TrimSpace(rule.Action.URL)
+            if actionURL == "" {
+                return fmt.Errorf("%w: rule %q http action requires url", ErrInvalidFuzzy, rule.Name)
+            }
+
+            parsed, err := url.ParseRequestURI(actionURL)
+            if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+                return fmt.Errorf("%w: rule %q http action has invalid url", ErrInvalidFuzzy, rule.Name)
+            }
+
+            if parsed.Scheme != "http" && parsed.Scheme != "https" {
+                return fmt.Errorf("%w: rule %q http action url must use http or https", ErrInvalidFuzzy, rule.Name)
             }
         }
     }

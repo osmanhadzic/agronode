@@ -362,10 +362,15 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, initialFuzzyConfig, onC
                       const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                       next.rules[rIdx].action = next.rules[rIdx].action || { type: e.target.value, value: 1 }
                       next.rules[rIdx].action.type = e.target.value
+                      if (e.target.value === 'http') {
+                        if (!next.rules[rIdx].action.method) next.rules[rIdx].action.method = 'POST'
+                        if (!next.rules[rIdx].action.url) next.rules[rIdx].action.url = ''
+                      }
                       setTriggerObj(next)
                     }}>
                       <option value="activate">activate</option>
                       <option value="set">set</option>
+                      <option value="http">http</option>
                     </select>
                     <input type="number" step="0.1" value={String(rule.action?.value ?? 1)} onChange={(e) => {
                       const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
@@ -374,6 +379,37 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, initialFuzzyConfig, onC
                       setTriggerObj(next)
                     }} style={ invalidRuleActionIndexes.includes(rIdx) ? { width: 120, borderColor: '#e66', borderWidth: 1 } : { width: 120 } } />
                   </div>
+                  {rule.action?.type === 'http' && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                      <select value={rule.action?.method ?? 'POST'} onChange={(e) => {
+                        const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
+                        next.rules[rIdx].action = next.rules[rIdx].action || { type: 'http', value: 1 }
+                        next.rules[rIdx].action.method = e.target.value
+                        setTriggerObj(next)
+                      }}>
+                        <option value="POST">POST</option>
+                        <option value="GET">GET</option>
+                        <option value="PUT">PUT</option>
+                        <option value="PATCH">PATCH</option>
+                      </select>
+                      <input placeholder="https://example.com/webhook" value={rule.action?.url ?? ''} onChange={(e) => {
+                        const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
+                        next.rules[rIdx].action = next.rules[rIdx].action || { type: 'http', value: 1 }
+                        next.rules[rIdx].action.url = e.target.value
+                        setTriggerObj(next)
+                      }} style={ invalidRuleActionIndexes.includes(rIdx) ? { flex: 1, borderColor: '#e66', borderWidth: 1 } : { flex: 1 } } />
+                    </div>
+                  )}
+                  {rule.action?.type === 'http' && (
+                    <div style={{ marginTop: 8 }}>
+                      <textarea placeholder='Optional body (if empty, default JSON payload is sent)' value={rule.action?.body ?? ''} onChange={(e) => {
+                        const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
+                        next.rules[rIdx].action = next.rules[rIdx].action || { type: 'http', value: 1 }
+                        next.rules[rIdx].action.body = e.target.value
+                        setTriggerObj(next)
+                      }} rows={3} style={{ width: '100%' }} />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
