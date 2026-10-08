@@ -168,6 +168,24 @@ services:
     networks:
       - agronode-net
 
+  agronode-mcp:
+    image: agronode-mcp-dotnet:latest
+    build:
+      context: ./mcp/agronode-mcp
+      dockerfile: Dockerfile
+    container_name: agronode-mcp
+    restart: unless-stopped
+    environment:
+      AGRONODE_MCP_REST_BASE_URL: ${AGRONODE_MCP_REST_BASE_URL:-http://backend:8080}
+      AGRONODE_MCP_ORGANIZATION_ID: ${AGRONODE_MCP_ORGANIZATION_ID:-1}
+      AGRONODE_MCP_TIMEOUT_SECONDS: ${AGRONODE_MCP_TIMEOUT_SECONDS:-15}
+    stdin_open: true
+    tty: true
+    depends_on:
+      - backend
+    networks:
+      - agronode-net
+
   demo-device:
     image: eclipse-mosquitto:2
     container_name: agronode-demo-device

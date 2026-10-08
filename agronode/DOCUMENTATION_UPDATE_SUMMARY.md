@@ -258,6 +258,27 @@
 
 ---
 
+### 11. ✅ [docs/MCP_DOTNET_SETUP.md](docs/MCP_DOTNET_SETUP.md)
+**Status**: Newly Added  
+**Key Changes**:
+- Added practical .NET MCP bootstrap steps
+- Defined recommended MCP project structure under `mcp/agronode-mcp`
+- Documented backend endpoint configuration strategy (REST + gRPC)
+- Added minimum MCP tool set aligned with AgroNode architecture
+- Included security baseline and validation checklist
+
+**Sections**:
+- Prerequisites
+- Project Structure
+- Backend Endpoint Configuration
+- Minimum Tool Set
+- Security Baseline
+- Local Run
+- Validation Checklist
+- Suggested Next Docs
+
+---
+
 ## Documentation Hierarchy
 
 ```
@@ -278,7 +299,8 @@ agronode/
 └── docs/
     ├── DEMO_DEVICE.md                  # Demo device guide (UPDATED ✅)
     ├── AGN-17_INTEGRATION_TEST.md       # Integration tests (UPDATED ✅)
-    └── AGN-19_DOCKER_STABILITY_TEST.md  # Stability tests (UPDATED ✅)
+   ├── AGN-19_DOCKER_STABILITY_TEST.md  # Stability tests (UPDATED ✅)
+   └── MCP_DOTNET_SETUP.md              # .NET MCP setup guide (NEW ✅)
 ```
 
 ---
@@ -366,13 +388,14 @@ agronode/
 | Stability Tests | ✓ | ✓ | 10 comprehensive test cases |
 | Backend Setup | ✗ | ✓ | NEW: Quick start + troubleshooting |
 | Frontend Setup | ✓ | ✓ | Enhanced significantly |
+| MCP Setup (.NET) | ✗ | ✓ | NEW: bootstrap + security baseline |
 
 ---
 
 ## Quality Metrics
 
-- **Total Files Updated**: 10
-- **New Files Created**: 2 (backend/README.md, frontend/README.md)
+- **Total Files Updated**: 11
+- **New Files Created**: 3 (backend/README.md, frontend/README.md, docs/MCP_DOTNET_SETUP.md)
 - **Lines of Documentation**: ~4000+ (across all files)
 - **Code Examples**: 50+ (cURL, TypeScript, Go, bash)
 - **Diagrams/Flows**: 15+ (ASCII and conceptual)
@@ -398,6 +421,11 @@ agronode/
 2. Testing: [docs/AGN-19_DOCKER_STABILITY_TEST.md](docs/AGN-19_DOCKER_STABILITY_TEST.md)
 3. Troubleshooting: Backend/Frontend README troubleshooting sections
 
+### For AI/MCP Integration
+1. Setup: [docs/MCP_DOTNET_SETUP.md](docs/MCP_DOTNET_SETUP.md)
+2. Architecture context: [ARCHITECTURE.md](ARCHITECTURE.md) and [copilot-instructions.md](copilot-instructions.md#26-mcp--ai)
+3. API contracts: [backend/docs/API.md](backend/docs/API.md)
+
 ### For Device Integration
 1. Protocol: [MQTT_CONTRACT.md](MQTT_CONTRACT.md)
 2. Examples: Demo device in [docs/DEMO_DEVICE.md](docs/DEMO_DEVICE.md)
@@ -420,6 +448,7 @@ agronode/
 ✅ Troubleshooting guides included  
 ✅ Performance tips documented  
 ✅ Deployment strategies outlined  
+✅ .NET MCP setup baseline documented  
 
 ---
 
