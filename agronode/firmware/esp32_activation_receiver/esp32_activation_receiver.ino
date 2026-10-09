@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <time.h>
+#include <stdarg.h>
 
 #define ACTIVATION_PIN 2
 
@@ -13,6 +14,8 @@ const uint16_t MQTT_PORT = 1883;
 const char* DEVICE_ID_BASE = "pump-node";
 const char* FIRMWARE_VERSION = "1.0.0";
 const unsigned long ACTIVATION_SIGNAL_DURATION_MS = 5000;
+const unsigned long ACTIVATION_BLINK_INTERVAL_MS = 250;
+const unsigned long HEARTBEAT_INTERVAL_MS = 10000;
 
 const long GMT_OFFSET_SEC = 0;
 const int DAYLIGHT_OFFSET_SEC = 0;
@@ -22,6 +25,10 @@ WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 unsigned long activationSignalUntilMs = 0;
+unsigned long activationNextBlinkMs = 0;
+bool activationBlinking = false;
+bool activationOutputState = false;
+unsigned long nextHeartbeatMs = 0;
 char activationTopicBuffer[128];
 char registerTopicBuffer[128];
 char deviceIdBuffer[64];
@@ -40,14 +47,47 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length);
 void handleActivationPayload(const String& payload);
 bool payloadHasDeviceId(const String& payload, const char* expectedDeviceId);
 bool payloadHasBooleanField(const String& payload, const char* fieldName, bool expectedValue);
+void logInfo(const char* message);
+void logf(const char* level, const char* format, ...);
+void printHeartbeat();
+
+void logInfo(const char* message) {
+  logf("INFO", "%s", message);
+}
+
+void logf(const char* level, const char* format, ...) {
+  char message[256];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(message, sizeof(message), format, args);
+  va_end(args);
+
+  Serial.print("[");
+  Serial.print(millis());
+  Serial.print("ms] ");
+  Serial.print(level);
+  Serial.print(" ");
+  Serial.println(message);
+}
+
+void printHeartbeat() {
+  logf(
+    "HEARTBEAT",
+    "wifi=%s mqtt=%s device=%s topic=%s led=%s",
+    WiFi.status() == WL_CONNECTED ? "OK" : "DOWN",
+    mqttClient.connected() ? "OK" : "DOWN",
+    deviceIdBuffer,
+    activationTopicBuffer,
+    activationOutputState ? "ON" : "OFF"
+  );
+}
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
   buildRuntimeDeviceId();
-  Serial.print("Runtime DEVICE_ID: ");
-  Serial.println(deviceIdBuffer);
+  logf("BOOT", "Runtime DEVICE_ID=%s", deviceIdBuffer);
 
   pinMode(ACTIVATION_PIN, OUTPUT);
   digitalWrite(ACTIVATION_PIN, LOW);
@@ -62,6 +102,8 @@ void setup() {
   ensureMqttConnected();
   syncClock();
   registerDevice();
+  nextHeartbeatMs = millis() + HEARTBEAT_INTERVAL_MS;
+  printHeartbeat();
 }
 
 void ensureWiFiConnected() {
@@ -72,15 +114,14 @@ void ensureWiFiConnected() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  Serial.print("Connecting WiFi");
+  logf("WIFI", "Connecting to SSID=%s", WIFI_SSID);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
+    Serial.print('.');
   }
 
   Serial.println();
-  Serial.print("WiFi connected, IP: ");
-  Serial.println(WiFi.localIP());
+  logf("WIFI", "Connected IP=%s RSSI=%d", WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
 }
 
 void ensureMqttConnected() {
@@ -88,21 +129,16 @@ void ensureMqttConnected() {
     return;
   }
 
-  Serial.print("Connecting MQTT");
+  logf("MQTT", "Connecting host=%s:%u client=%s", MQTT_HOST, MQTT_PORT, deviceIdBuffer);
   while (!mqttClient.connected()) {
     if (mqttClient.connect(deviceIdBuffer)) {
-      Serial.println(" connected");
+      logInfo("MQTT connected");
       bool subscribed = mqttClient.subscribe(activationTopicBuffer);
-      Serial.print("Subscribe activation topic: ");
-      Serial.print(activationTopicBuffer);
-      Serial.print(" -> ");
-      Serial.println(subscribed ? "OK" : "FAILED");
+      logf("MQTT", "Subscribe topic=%s status=%s", activationTopicBuffer, subscribed ? "OK" : "FAILED");
       return;
     }
 
-    Serial.print(".");
-    Serial.print(" state=");
-    Serial.println(mqttClient.state());
+    logf("MQTT", "connect retry state=%d", mqttClient.state());
     delay(1000);
   }
 }
@@ -132,8 +168,7 @@ void registerDevice() {
 
   mqttClient.loop();
   bool ok = mqttClient.publish(registerTopicBuffer, payload);
-  Serial.print("Device registration: ");
-  Serial.println(ok ? "SENT" : "FAILED");
+  logf("REGISTER", "topic=%s status=%s", registerTopicBuffer, ok ? "SENT" : "FAILED");
 }
 
 void onMqttMessage(char* topic, byte* payload, unsigned int length) {
@@ -147,32 +182,37 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  Serial.print("MQTT activation payload: ");
-  Serial.println(payloadText);
+  logf("MQTT", "RX topic=%s payload=%s", topic, payloadText.c_str());
   handleActivationPayload(payloadText);
 }
 
 void handleActivationPayload(const String& payload) {
   if (!payloadHasDeviceId(payload, deviceIdBuffer)) {
-    Serial.println("Activation payload ignored: deviceId mismatch");
+    logInfo("Activation ignored: deviceId mismatch");
     return;
   }
 
   if (payloadHasBooleanField(payload, "activated", true)) {
     activationSignalUntilMs = millis() + ACTIVATION_SIGNAL_DURATION_MS;
+    activationNextBlinkMs = millis() + ACTIVATION_BLINK_INTERVAL_MS;
+    activationBlinking = true;
+    activationOutputState = true;
     digitalWrite(ACTIVATION_PIN, HIGH);
-    Serial.println("ACTIVATION ON");
+    logf("TRIGGER", "ACTIVATION ON (BLINKING) durationMs=%lu", ACTIVATION_SIGNAL_DURATION_MS);
     return;
   }
 
   if (payloadHasBooleanField(payload, "activated", false)) {
     activationSignalUntilMs = 0;
+    activationNextBlinkMs = 0;
+    activationBlinking = false;
+    activationOutputState = false;
     digitalWrite(ACTIVATION_PIN, LOW);
-    Serial.println("ACTIVATION OFF");
+    logInfo("TRIGGER ACTIVATION OFF");
     return;
   }
 
-  Serial.println("Activation payload ignored: missing activated flag");
+  logInfo("Activation ignored: missing activated flag");
 }
 
 bool payloadHasDeviceId(const String& payload, const char* expectedDeviceId) {
@@ -205,10 +245,26 @@ void loop() {
   ensureMqttConnected();
   mqttClient.loop();
 
-  if (activationSignalUntilMs > 0 && millis() >= activationSignalUntilMs) {
-    activationSignalUntilMs = 0;
-    digitalWrite(ACTIVATION_PIN, LOW);
-    Serial.println("ACTIVATION AUTO-OFF");
+  if (activationBlinking && activationSignalUntilMs > 0) {
+    unsigned long nowMs = millis();
+
+    if (nowMs >= activationSignalUntilMs) {
+      activationSignalUntilMs = 0;
+      activationNextBlinkMs = 0;
+      activationBlinking = false;
+      activationOutputState = false;
+      digitalWrite(ACTIVATION_PIN, LOW);
+      logInfo("TRIGGER ACTIVATION AUTO-OFF");
+    } else if (nowMs >= activationNextBlinkMs) {
+      activationOutputState = !activationOutputState;
+      digitalWrite(ACTIVATION_PIN, activationOutputState ? HIGH : LOW);
+      activationNextBlinkMs = nowMs + ACTIVATION_BLINK_INTERVAL_MS;
+    }
+  }
+
+  if (millis() >= nextHeartbeatMs) {
+    printHeartbeat();
+    nextHeartbeatMs = millis() + HEARTBEAT_INTERVAL_MS;
   }
 
   delay(20);

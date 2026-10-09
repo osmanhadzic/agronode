@@ -13,8 +13,12 @@ type Condition struct {
 }
 
 type Action struct {
-    Type  string  `json:"type"`
-    Value float64 `json:"value"`
+    Type    string            `json:"type"`
+    Value   float64           `json:"value"`
+    URL     string            `json:"url,omitempty"`
+    Method  string            `json:"method,omitempty"`
+    Headers map[string]string `json:"headers,omitempty"`
+    Body    string            `json:"body,omitempty"`
 }
 
 type Rule struct {

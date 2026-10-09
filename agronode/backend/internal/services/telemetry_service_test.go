@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -746,4 +748,66 @@ func TestTelemetryService_PersistsExecutionAttempts(t *testing.T) {
 			t.Fatalf("expected error message %q, got %q", "broker unavailable", *execution.ErrorMessage)
 		}
 	})
+}
+
+func TestTelemetryService_FuzzyHTTPAction(t *testing.T) {
+	repository := &telemetryRepositoryStub{}
+	service := NewTelemetryService(repository, nil)
+
+	received := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received++
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST request, got %s", r.Method)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	service.SetHTTPClient(server.Client())
+
+	fuzzyTrigger := fuzzy.FuzzyTrigger{
+		MembershipFunctions: []fuzzy.MembershipFunction{
+			{Name: "hot", Sensor: "temperature", Type: "triangle", Parameters: []float64{20, 30, 40}},
+		},
+		Rules: []fuzzy.Rule{
+			{
+				Name:       "send_webhook",
+				Conditions: []fuzzy.Condition{{Sensor: "temperature", Membership: "hot"}},
+				Operator:   "AND",
+				Action: fuzzy.Action{
+					Type:   "http",
+					Value:  1,
+					URL:    server.URL,
+					Method: "POST",
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(fuzzyTrigger)
+	if err != nil {
+		t.Fatalf("expected marshaled fuzzy trigger, got %v", err)
+	}
+
+	err = service.SetSensorTrigger(context.Background(), "esp32-lab", "temperature", models.SensorTrigger{FuzzyConfig: data})
+	if err != nil {
+		t.Fatalf("expected no error setting fuzzy trigger, got %v", err)
+	}
+
+	err = service.ProcessTelemetry(context.Background(), models.TelemetryReading{
+		DeviceID: "esp32-lab",
+		SensorID: "temperature",
+		Sensors: map[string]float64{
+			"temperature": 35,
+		},
+		CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("expected no error processing telemetry, got %v", err)
+	}
+
+	if received != 1 {
+		t.Fatalf("expected 1 outbound webhook request, got %d", received)
+	}
 }

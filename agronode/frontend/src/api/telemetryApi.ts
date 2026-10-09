@@ -174,6 +174,10 @@ export interface Condition {
 export interface Action {
   type: string
   value: number
+  url?: string
+  method?: string
+  headers?: Record<string, string>
+  body?: string
 }
 
 export interface Rule {
