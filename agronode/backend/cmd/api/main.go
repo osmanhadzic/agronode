@@ -70,6 +70,7 @@ func main() {
 	deviceService.SetEventPublisher(realtimeHub)
 	telemetryService.SetSensorDiscoveryUpdater(deviceService)
 	telemetryService.SetMetadataUpdater(deviceService)
+	adminChatLLM := services.NewAdminChatLLMService(cfg)
 
 	appContext, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
@@ -87,7 +88,7 @@ func main() {
 		}
 	}()
 
-	router := server.NewRouter(logger, cfg.SessionSecret, authService, telemetryService, streamControlService, telemetryService, deviceService, organizationService, realtimeHub)
+	router := server.NewRouter(logger, cfg.SessionSecret, authService, telemetryService, streamControlService, telemetryService, deviceService, organizationService, realtimeHub, adminChatLLM)
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.AppPort,
 		Handler:           router,

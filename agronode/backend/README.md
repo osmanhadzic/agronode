@@ -241,6 +241,35 @@ MQTT_ACTIVATION_TOPIC=agronode/{deviceId}/activation
 
 # Organization
 DEFAULT_ORG_ID=1                 # Used for MQTT-registered devices (no auth header)
+
+# Admin chat LLM (optional, for /ws/admin/chat assistant replies)
+ADMIN_CHAT_LLM_ENABLED=false
+ADMIN_CHAT_LLM_PROVIDER=ollama
+ADMIN_CHAT_LLM_BASE_URL=http://ollama:11434
+ADMIN_CHAT_LLM_API_KEY=
+ADMIN_CHAT_LLM_MODEL=llama3.2:1b
+ADMIN_CHAT_LLM_CHAT_COMPLETIONS_PATH=/v1/chat/completions
+ADMIN_CHAT_LLM_TIMEOUT_SECONDS=20
+```
+
+Supported `ADMIN_CHAT_LLM_PROVIDER` values:
+
+- `ollama`
+- `openai`
+- `openai-compatible`
+- `external`
+
+### Admin Chat LLM test (Docker)
+
+```bash
+# 1) start Ollama service
+docker compose --profile llm up -d ollama
+
+# 2) pull a model once
+docker compose exec ollama ollama pull llama3.2:1b
+
+# 3) restart backend with LLM enabled
+ADMIN_CHAT_LLM_ENABLED=true docker compose up -d --build backend
 ```
 
 ### Logging
