@@ -1,5 +1,7 @@
 import { memo } from 'react'
 
+import { useI18n } from '../i18n'
+
 type SensorVisibilitySelectorProps = {
   sensors: string[]
   selectedSensors: string[]
@@ -22,13 +24,15 @@ export const SensorVisibilitySelector = memo(function SensorVisibilitySelector({
   selectedSensors,
   onToggleSensor,
 }: SensorVisibilitySelectorProps) {
+  const { t } = useI18n()
+
   if (sensors.length === 0) {
     return null
   }
 
   return (
     <section className="sensor-visibility-panel">
-      <h2 className="sensor-visibility-title">Prikaz senzora</h2>
+      <h2 className="sensor-visibility-title">{t('sensors.visibility')}</h2>
       <div className="sensor-visibility-list">
         {sensors.map((sensorKey) => {
           const checked = selectedSensors.includes(sensorKey)

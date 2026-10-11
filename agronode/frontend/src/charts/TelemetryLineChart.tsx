@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts'
 
+import { useI18n } from '../i18n'
 import type { TelemetryAggregate, TelemetryReading, TriggerExecutionEvent, TriggerListItem } from '../types/telemetry'
 
 type TelemetryLineChartProps = {
@@ -75,13 +76,13 @@ type SensorStats = {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-function formatAxisTime(ts: number, spanMs: number): string {
+function formatAxisTime(ts: number, spanMs: number, locale: string): string {
   const date = new Date(ts)
   if (spanMs <= DAY_MS) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
   }
   if (spanMs <= 7 * DAY_MS) {
-    return date.toLocaleString([], {
+    return date.toLocaleString(locale, {
       day: '2-digit',
       month: '2-digit',
       hour: '2-digit',
@@ -89,13 +90,13 @@ function formatAxisTime(ts: number, spanMs: number): string {
     })
   }
   if (spanMs <= 400 * DAY_MS) {
-    return date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })
+    return date.toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })
   }
-  return date.toLocaleDateString([], { month: '2-digit', year: 'numeric' })
+  return date.toLocaleDateString(locale, { month: '2-digit', year: 'numeric' })
 }
 
-function formatTooltipTime(ts: number): string {
-  return new Date(ts).toLocaleString([], {
+function formatTooltipTime(ts: number, locale: string): string {
+  return new Date(ts).toLocaleString(locale, {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -208,10 +209,11 @@ export function TelemetryLineChart({
   triggerEvents = [],
   deviceId = 'device',
 }: TelemetryLineChartProps) {
+  const { t, locale } = useI18n()
   const sourceForStats = statsData ?? data
   const times = data
     .map((reading) => new Date(reading.createdAt).getTime())
-    .filter((t) => !Number.isNaN(t))
+    .filter((time) => !Number.isNaN(time))
   const minTime = times.length ? Math.min(...times) : 0
   const maxTime = times.length ? Math.max(...times) : 0
   const aggTimes = (aggregate?.buckets ?? []).map((bucket) => new Date(bucket.time).getTime())
@@ -273,15 +275,15 @@ export function TelemetryLineChart({
   return (
     <div className="chart-panel">
       <h2 className="chart-title">
-        {mode === 'history' ? 'Istorija telemetrije' : 'Telemetrija uživo'}
+        {mode === 'history' ? t('chart.history') : t('chart.live')}
       </h2>
       {selectedSensors.length > 0 && (
         <button type="button" className="chart-export-button" onClick={exportCsv}>
-          Export CSV
+          {t('chart.export')}
         </button>
       )}
       {selectedSensors.length === 0 ? (
-        <p className="dashboard-message">Nijedan senzor nije odabran.</p>
+        <p className="dashboard-message">{t('chart.noSensors')}</p>
       ) : (
         <div className="chart-grid">
           {selectedSensors.map((sensorKey, index) => {
@@ -317,9 +319,9 @@ export function TelemetryLineChart({
               <h3 className="chart-card-title">{toSensorLabel(sensorKey)}</h3>
               {stats && (
                 <div className="chart-stats">
-                  <span>Min: <strong>{stats.min.toFixed(1)}</strong></span>
-                  <span>Max: <strong>{stats.max.toFixed(1)}</strong></span>
-                  <span>Prosjek: <strong>{stats.avg.toFixed(1)}</strong></span>
+                  <span>{t('chart.min')}: <strong>{stats.min.toFixed(1)}</strong></span>
+                  <span>{t('chart.max')}: <strong>{stats.max.toFixed(1)}</strong></span>
+                  <span>{t('chart.avg')}: <strong>{stats.avg.toFixed(1)}</strong></span>
                 </div>
               )}
               <ResponsiveContainer width="100%" height={220}>
@@ -330,19 +332,19 @@ export function TelemetryLineChart({
                     type="number"
                     scale="time"
                     domain={['dataMin', 'dataMax']}
-                    tickFormatter={(ts: number) => formatAxisTime(ts, spanMs)}
+                    tickFormatter={(ts: number) => formatAxisTime(ts, spanMs, locale)}
                     minTickGap={40}
                   />
                   <YAxis domain={['auto', 'auto']} />
                   <Tooltip
-                    labelFormatter={(ts) => formatTooltipTime(Number(ts))}
+                    labelFormatter={(ts) => formatTooltipTime(Number(ts), locale)}
                     formatter={(value, name) => [
                       Array.isArray(value)
                         ? `${Number(value[0]).toFixed(2)} – ${Number(value[1]).toFixed(2)}`
                         : typeof value === 'number'
                           ? value.toFixed(2)
                           : value,
-                      name === 'Min–Max' ? 'Min–Max' : useBand ? `${toSensorLabel(sensorKey)} (prosjek)` : toSensorLabel(sensorKey),
+                      name === t('chart.range') ? t('chart.range') : useBand ? t('chart.avgSeries', { sensor: toSensorLabel(sensorKey) }) : toSensorLabel(sensorKey),
                     ]}
                   />
                   {useBand && (
@@ -352,7 +354,7 @@ export function TelemetryLineChart({
                       stroke="none"
                       fill={lineColors[index % lineColors.length]}
                       fillOpacity={0.15}
-                      name="Min–Max"
+                      name={t('chart.range')}
                       isAnimationActive={false}
                     />
                   )}
@@ -365,7 +367,7 @@ export function TelemetryLineChart({
                         fill="#9ca3af"
                         fillOpacity={0.2}
                         stroke="none"
-                        label={{ value: 'offline ' + formatDuration(gap.to - gap.from), fontSize: 10, fill: '#6b7280', position: 'insideTop' }}
+                        label={{ value: t('chart.offline', { duration: formatDuration(gap.to - gap.from) }), fontSize: 10, fill: '#6b7280', position: 'insideTop' }}
                       />
                     ))}
                   {sensorEvents.map(({ event, time }) => (
@@ -375,7 +377,7 @@ export function TelemetryLineChart({
                       stroke={event.status === 'succeeded' ? '#f59e0b' : '#dc2626'}
                       strokeWidth={2}
                       label={{
-                        value: '⚡ ' + new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        value: '⚡ ' + new Date(time).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
                         fontSize: 10,
                         fill: '#b45309',
                         position: 'top',
@@ -387,7 +389,7 @@ export function TelemetryLineChart({
                       y={trigger.min}
                       stroke="#ef4444"
                       strokeDasharray="6 4"
-                      label={{ value: 'min ' + trigger.min, fontSize: 11, fill: '#ef4444', position: 'insideTopLeft' }}
+                      label={{ value: t('chart.minLimit', { value: trigger.min }), fontSize: 11, fill: '#ef4444', position: 'insideTopLeft' }}
                     />
                   )}
                   {typeof trigger?.max === 'number' && (
@@ -395,7 +397,7 @@ export function TelemetryLineChart({
                       y={trigger.max}
                       stroke="#ef4444"
                       strokeDasharray="6 4"
-                      label={{ value: 'max ' + trigger.max, fontSize: 11, fill: '#ef4444', position: 'insideBottomLeft' }}
+                      label={{ value: t('chart.maxLimit', { value: trigger.max }), fontSize: 11, fill: '#ef4444', position: 'insideBottomLeft' }}
                     />
                   )}
                   <Line
@@ -411,7 +413,7 @@ export function TelemetryLineChart({
                       dataKey="time"
                       height={24}
                       stroke="#94a3b8"
-                      tickFormatter={(ts: number) => formatAxisTime(ts, spanMs)}
+                      tickFormatter={(ts: number) => formatAxisTime(ts, spanMs, locale)}
                     />
                   )}
                 </ComposedChart>

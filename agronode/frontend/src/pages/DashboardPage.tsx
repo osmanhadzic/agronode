@@ -27,6 +27,8 @@ import { AdminChatPanel } from '../components/AdminChatPanel'
 import { SensorCard } from '../components/SensorCard'
 import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector'
 import FuzzyTriggerEditor from '../components/FuzzyTriggerEditor'
+import { SettingsModal } from '../components/SettingsModal'
+import { getLocaleTag, translate, useI18n } from '../i18n'
 import { clearSession, loadOrganizationScope, loadSession, saveOrganizationScope } from '../api/session'
 import type { OrganizationSummary } from '../types/organization'
 import type { TelemetryAggregate, TriggerExecutionEvent, TelemetryReading, TriggerListItem, DeviceSensor } from '../types/telemetry'
@@ -106,10 +108,12 @@ type DashboardPageProps = {
 
 export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPageProps) {
   const session = loadSession()
+  const { t } = useI18n()
   const sessionRole = session?.role
   const sessionOrganizationId = session?.organizationId
   const isAdmin = sessionRole === 'admin'
   const [organizations, setOrganizations] = useState<OrganizationSummary[]>([])
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [selectedOrganizationScope, setSelectedOrganizationScope] = useState<number | null>(() => loadOrganizationScope())
   const activeOrganizationScope = isAdmin ? selectedOrganizationScope ?? undefined : sessionOrganizationId
 
@@ -204,11 +208,11 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
   const triggerMapRef = useRef<Record<string, TriggerListItem>>({})
   const toastTimerRef = useRef<number | null>(null)
   const dashboardTabs = [
-    { id: 'overview', label: 'Pregled' },
-    { id: 'telemetry', label: 'Telemetrija' },
-    { id: 'sensors', label: 'Senzori' },
-    { id: 'triggers', label: 'Triggeri' },
-    ...(isAdmin ? [{ id: 'chat', label: 'Chat' } as const] : []),
+    { id: 'overview', label: t('tab.overview') },
+    { id: 'telemetry', label: t('tab.telemetry') },
+    { id: 'sensors', label: t('tab.sensors') },
+    { id: 'triggers', label: t('tab.triggers') },
+    ...(isAdmin ? [{ id: 'chat', label: t('tab.chat') } as const] : []),
   ] as const
 
   useEffect(() => {
@@ -588,7 +592,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
         }
       } catch {
         if (isMounted) {
-          setError('Failed to load telemetry data')
+          setError(translate('dash.loadFailed'))
         }
       } finally {
         if (isMounted) {
@@ -647,7 +651,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
       },
       () => {
         if (isMounted) {
-          setError('Realtime connection lost. Reconnecting...')
+          setError(translate('dash.realtimeLost'))
         }
       },
     )
@@ -667,7 +671,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
         setSelectedDeviceId((previous) => previous || event.deviceId)      },
       () => {
         if (isMounted) {
-          setError('Realtime connection lost. Reconnecting...')
+          setError(translate('dash.realtimeLost'))
         }
       },
     )
@@ -1010,7 +1014,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
           return
         }
 
-        setTriggerError('Failed to load trigger values')
+        setTriggerError(translate('trigger.err.loadValues'))
       }
     }
 
@@ -1049,7 +1053,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
           return
         }
 
-        setTriggerError('Failed to load trigger list')
+        setTriggerError(translate('trigger.err.loadList'))
       } finally {
         if (isMounted) {
           setIsLoadingTriggers(false)
@@ -1097,13 +1101,13 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
     event.preventDefault()
 
     if (!selectedDeviceId) {
-      setTriggerError('Select a device first')
+      setTriggerError(translate('trigger.err.selectDevice'))
       setTriggerMessage('')
       return
     }
 
     if (!activeTriggerSensor) {
-      setTriggerError('Select a sensor first')
+      setTriggerError(translate('trigger.err.selectSensor'))
       setTriggerMessage('')
       return
     }
@@ -1112,7 +1116,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
     const max = maxThresholdInput.trim() === '' ? undefined : Number(maxThresholdInput)
 
     if (min === undefined && max === undefined) {
-      setTriggerError('Set at least one threshold value')
+      setTriggerError(translate('trigger.err.needThreshold'))
       setTriggerMessage('')
       return
     }
@@ -1121,7 +1125,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
       (min !== undefined && Number.isNaN(min)) ||
       (max !== undefined && Number.isNaN(max))
     ) {
-      setTriggerError('Thresholds must be valid numbers')
+      setTriggerError(translate('trigger.err.invalidNumbers'))
       setTriggerMessage('')
       return
     }
@@ -1133,12 +1137,12 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
         const { validateFuzzyConfig } = await import('../utils/fuzzyValidation')
         const res = validateFuzzyConfig(savedFuzzyConfig)
         if (res.errors.length > 0) {
-          setTriggerError(`Invalid fuzzy config: ${res.errors[0]}`)
+          setTriggerError(translate('trigger.err.invalidFuzzyDetail', { detail: res.errors[0] }))
           setTriggerMessage('')
           return
         }
       } catch (e) {
-        setTriggerError('Invalid fuzzy config')
+        setTriggerError(translate('trigger.err.invalidFuzzy'))
         setTriggerMessage('')
         return
       }
@@ -1163,10 +1167,10 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
       setMinThresholdInput(savedTrigger.min !== undefined ? String(savedTrigger.min) : '')
       setMaxThresholdInput(savedTrigger.max !== undefined ? String(savedTrigger.max) : '')
       setTargetTriggerDeviceId(savedTrigger.targetDeviceId ?? selectedDeviceId)
-      setTriggerMessage(savedFuzzyConfig ? 'Trigger and fuzzy config saved successfully' : 'Trigger saved successfully')
+      setTriggerMessage(savedFuzzyConfig ? translate('trigger.msg.savedFuzzy') : translate('trigger.msg.saved'))
       await refreshDeviceTriggers(selectedDeviceId)
     } catch {
-      setTriggerError('Failed to save trigger values')
+      setTriggerError(translate('trigger.err.save'))
     } finally {
       setIsSavingTrigger(false)
     }
@@ -1178,7 +1182,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
     setMaxThresholdInput(trigger.max !== undefined ? String(trigger.max) : '')
     setTargetTriggerDeviceId(trigger.targetDeviceId ?? selectedDeviceId)
     setTriggerError('')
-    setTriggerMessage('Trigger loaded into form')
+    setTriggerMessage(translate('trigger.msg.loaded'))
   }
 
   const handleDeleteTrigger = async (sensorId: string) => {
@@ -1199,9 +1203,9 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
         setMaxThresholdInput('')
       }
 
-      setTriggerMessage('Trigger deleted successfully')
+      setTriggerMessage(translate('trigger.msg.deleted'))
     } catch {
-      setTriggerError('Failed to delete trigger')
+      setTriggerError(translate('trigger.err.delete'))
     } finally {
       setDeletingSensor('')
     }
@@ -1242,7 +1246,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
         return next
       })
     } catch {
-      setStreamControlError('Failed to send stream control command')
+      setStreamControlError(translate('stream.err.device'))
     } finally {
       setIsSendingStreamCommand(false)
     }
@@ -1279,7 +1283,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
         [key]: response.streaming,
       }))
     } catch {
-      setStreamControlError(`Failed to send stream control for sensor ${sensorId}`)
+      setStreamControlError(translate('stream.err.sensor', { sensor: sensorId }))
     } finally {
       setSendingSensorId('')
     }
@@ -1311,19 +1315,20 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
       return timestamp
     }
 
-    return parsedDate.toLocaleTimeString()
+    return parsedDate.toLocaleTimeString(getLocaleTag())
   }
 
   const formatEventDescription = (event: TriggerEvent) => {
     const sensorLabel = formatSensorLabel(event.sensor)
     const unit = getSensorUnit(event.sensor)
-    const limitText = event.limitType === 'max' ? 'Iznad max' : 'Ispod min'
+    const limitText = event.limitType === 'max' ? t('events.above') : t('events.below')
+    const params = { sensor: sensorLabel, limit: limitText, value: event.value, unit, threshold: event.threshold }
 
     if (event.type === 'activation') {
-      return `ALERT: ${sensorLabel} ${limitText} (vrednost ${event.value}${unit}, prag ${event.threshold}${unit})`
+      return t('events.alert', params)
     }
 
-    return `INFO: ${sensorLabel} normalizovan (vrednost ${event.value}${unit}, prag ${event.threshold}${unit})`
+    return t('events.normalized', params)
   }
 
   return (
@@ -1332,7 +1337,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
         <div className="trigger-toast" role="status" aria-live="polite">
           <p className="trigger-event-text">{formatEventDescription(toastTriggerEvent)}</p>
           <p className="trigger-event-meta">
-            Izvor: {toastTriggerEvent.deviceId} · Target: {toastTriggerEvent.targetDeviceId} · Vreme: {formatEventTime(toastTriggerEvent.timestamp)}
+            {t('events.metaToast', { source: toastTriggerEvent.deviceId, target: toastTriggerEvent.targetDeviceId, time: formatEventTime(toastTriggerEvent.timestamp) })}
           </p>
         </div>
       )}
@@ -1343,7 +1348,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
 
           {selectedDeviceId && (
             <p className="device-status">
-              Status:{' '}
+              {t('common.status')}:{' '}
               <span
                 className={`device-status-value device-status-${selectedDeviceStatus}`}
               >
@@ -1354,39 +1359,19 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
 
           {session && (
             <p className="dashboard-session">
-              Prijavljen: <strong>{session.email}</strong> ·
+              {t('dash.signedInAs')} <strong>{session.email}</strong> ·
               <span className={`dashboard-role-badge dashboard-role-${session.role}`}>{session.role}</span>
               {session.role === 'organization' ? ` · Org ${session.organizationId}` : ''}
               {session.role === 'admin' && activeOrganizationScope
-                ? ` · Scope Org ${activeOrganizationScope}`
+                ? ` · ${t('dash.scopeOrg', { id: activeOrganizationScope })}`
                 : session.role === 'admin'
-                  ? ' · Scope All organizations'
+                  ? ` · ${t('dash.scopeAll')}`
                   : ''}
             </p>
           )}
         </div>
 
         <div className="dashboard-header-actions">
-          {session?.role === 'admin' && (
-            <label className="organization-selector">
-              <span>Organization</span>
-              <select
-                value={selectedOrganizationScope ?? ''}
-                onChange={(event) => {
-                  const value = event.target.value
-                  handleOrganizationScopeChange(value === '' ? null : Number(value))
-                }}
-              >
-                <option value="">All organizations</option>
-                {organizations.map((organization) => (
-                  <option key={organization.id} value={organization.id}>
-                    {organization.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
           {devices.length > 0 && (
             <DeviceSelector
               devices={devices}
@@ -1405,10 +1390,20 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
             disabled={!selectedDeviceId || isSendingStreamCommand}
           >
             {isSendingStreamCommand
-              ? 'Sending...'
+              ? t('common.sending')
               : isSelectedDeviceStreaming
-                ? 'Stop MQTT'
-                : 'Start MQTT'}
+                ? t('dash.stopMqtt')
+                : t('dash.startMqtt')}
+          </button>
+
+          <button
+            type="button"
+            className="dashboard-logout-button"
+            onClick={() => setSettingsOpen(true)}
+            aria-label={t('settings.open')}
+            title={t('settings.open')}
+          >
+            ⚙ {t('settings.open')}
           </button>
 
           <button
@@ -1416,14 +1411,14 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
             className="dashboard-logout-button"
             onClick={() => clearSession()}
           >
-            Logout
+            {t('common.logout')}
           </button>
         </div>
       </header>
 
       {streamControlError && <p className="dashboard-message">{streamControlError}</p>}
 
-      <nav className="dashboard-tabs" role="tablist" aria-label="Dashboard sections">
+      <nav className="dashboard-tabs" role="tablist" aria-label={t('tab.aria')}>
         {dashboardTabs.map((tab) => (
           <button
             key={tab.id}
@@ -1439,13 +1434,13 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
       </nav>
 
       {isLoading && (
-        <p className="dashboard-message">Loading telemetry...</p>
+        <p className="dashboard-message">{t('dash.loadingTelemetry')}</p>
       )}
 
       {error && <p className="dashboard-message">{error}</p>}
 
       {!isLoading && !error && devices.length === 0 && (
-        <p className="dashboard-message">No telemetry data available</p>
+        <p className="dashboard-message">{t('dash.noTelemetry')}</p>
       )}
 
 
@@ -1455,28 +1450,28 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
             <DeviceMetaPanel meta={latestDeviceReading?.meta} />
 
             <section className="dashboard-card dashboard-card-soft">
-              <p className="dashboard-card-eyebrow">Brzi pregled</p>
-              <h2 className="dashboard-card-title">Trenutni uređaj</h2>
+              <p className="dashboard-card-eyebrow">{t('overview.eyebrow')}</p>
+              <h2 className="dashboard-card-title">{t('overview.title')}</h2>
               <p className="dashboard-card-copy">
-                Pregled statusa uređaja, metapodataka i glavnih senzora na jednom mjestu.
+                {t('overview.copy')}
               </p>
               <div className="dashboard-stat-row">
                 <div>
-                  <span className="dashboard-stat-label">Uređaj</span>
-                  <strong className="dashboard-stat-value">{selectedDeviceId || 'Nije izabran'}</strong>
+                  <span className="dashboard-stat-label">{t('overview.device')}</span>
+                  <strong className="dashboard-stat-value">{selectedDeviceId || t('overview.notSelected')}</strong>
                 </div>
                 <div>
-                  <span className="dashboard-stat-label">Senzori</span>
+                  <span className="dashboard-stat-label">{t('overview.sensors')}</span>
                   <strong className="dashboard-stat-value">{availableSensors.length}</strong>
                 </div>
                 <div>
-                  <span className="dashboard-stat-label">Status</span>
+                  <span className="dashboard-stat-label">{t('common.status')}</span>
                   <strong className={`dashboard-stat-value device-status-value device-status-${selectedDeviceStatus}`}>
                     {selectedDeviceStatus}
                   </strong>
                 </div>
                 <div>
-                  <span className="dashboard-stat-label">Type</span>
+                  <span className="dashboard-stat-label">{t('common.type')}</span>
                   <strong className="dashboard-stat-value">
                     {deviceTypes[selectedDeviceId] ?? 'unknown'}
                   </strong>
@@ -1494,12 +1489,12 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
           {selectedDeviceId && (
             <section className="dashboard-card dashboard-card-soft telemetry-sensor-filter">
               <label className="trigger-field">
-                <span>Filtriraj po sensorId</span>
+                <span>{t('telemetry.filterBySensor')}</span>
                 <select
                   value={selectedTelemetrySensor}
                   onChange={(event) => setSelectedTelemetrySensor(event.target.value)}
                 >
-                  <option value="all">Svi senzori</option>
+                  <option value="all">{t('telemetry.allSensors')}</option>
                   {availableSensors.map((sensorKey) => (
                     <option key={sensorKey} value={sensorKey}>
                       {formatSensorLabel(sensorKey)}
@@ -1519,7 +1514,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
 
           {dataMode === 'live' && (
             <div className="dashboard-banner dashboard-banner-live">
-              Prikazano: posljednji sat podataka u realnom vremenu
+              {t('telemetry.liveBanner')}
             </div>
           )}
 
@@ -1533,7 +1528,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
 
             return isDownsampled ? (
               <div className="dashboard-banner dashboard-banner-warning">
-                Prikazano: {deviceTelemetry.length} od {originalData.length} podataka (optimizovano za performanse)
+                {t('telemetry.downsampled', { shown: deviceTelemetry.length, total: originalData.length })}
               </div>
             ) : null
           })()}
@@ -1559,7 +1554,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
             <Suspense
               fallback={
                 <div className="dashboard-loading-chart">
-                  Loading chart...
+                  {t('dash.loadingChart')}
                 </div>
               }
             >
@@ -1585,19 +1580,19 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
       {activeTab === 'sensors' && (
         <section className="dashboard-tab-panel">
           <section className="dashboard-card dashboard-card-soft">
-            <p className="dashboard-card-eyebrow">Senzori</p>
-            <h2 className="dashboard-card-title">Senzori po uređaju</h2>
+            <p className="dashboard-card-eyebrow">{t('sensorsTab.eyebrow')}</p>
+            <h2 className="dashboard-card-title">{t('sensorsTab.title')}</h2>
             <p className="dashboard-card-copy">
-              Izaberi senzor i otvori telemetriju filtriranu po sensorId ili odmah podesi trigger.
+              {t('sensorsTab.copy')}
             </p>
           </section>
 
           {!selectedDeviceId && (
-            <p className="dashboard-message">Prvo odaberi uređaj.</p>
+            <p className="dashboard-message">{t('sensorsTab.pickDevice')}</p>
           )}
 
           {selectedDeviceId && sensorCatalog.length === 0 && (
-            <p className="dashboard-message">Nema registrovanih senzora za ovaj uređaj.</p>
+            <p className="dashboard-message">{t('sensorsTab.none')}</p>
           )}
 
           {selectedDeviceId && sensorCatalog.length > 0 && (
@@ -1605,9 +1600,9 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
               <table className="trigger-table">
                 <thead>
                   <tr>
-                    <th>Sensor ID</th>
-                    <th>Naziv</th>
-                    <th>Akcije</th>
+                    <th>{t('sensorsTab.sensorId')}</th>
+                    <th>{t('sensorsTab.name')}</th>
+                    <th>{t('sensorsTab.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1620,13 +1615,13 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                           type="button"
                           onClick={() => handleOpenSensorTelemetry(sensorId)}
                         >
-                          Telemetrija
+                          {t('sensorsTab.telemetry')}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleConfigureSensorTrigger(sensorId)}
                         >
-                          Trigger
+                          {t('sensorsTab.trigger')}
                         </button>
                         <button
                           type="button"
@@ -1636,10 +1631,10 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                           disabled={sendingSensorId === sensorId}
                         >
                           {sendingSensorId === sensorId
-                            ? 'Sending...'
+                            ? t('common.sending')
                             : isSensorStreaming(sensorId)
-                              ? 'Stop data'
-                              : 'Start data'}
+                              ? t('sensorsTab.stopData')
+                              : t('sensorsTab.startData')}
                         </button>
                       </td>
                     </tr>
@@ -1656,24 +1651,24 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
           <section className="trigger-panel dashboard-card">
             <div className="trigger-panel-header">
               <div>
-                <p className="dashboard-card-eyebrow">Automatika</p>
-                <h2 className="trigger-title">Sensor Trigger</h2>
+                <p className="dashboard-card-eyebrow">{t('trigger.eyebrow')}</p>
+                <h2 className="trigger-title">{t('trigger.title')}</h2>
               </div>
               <p className="dashboard-card-copy">
-                Dodaj pragove po senzoru i ciljnom uređaju.
+                {t('trigger.copy')}
               </p>
             </div>
 
             <form className="trigger-form" onSubmit={handleSaveTrigger}>
               <label className="trigger-field">
-                <span>Sensor</span>
+                <span>{t('trigger.sensor')}</span>
                 <select
                   value={activeTriggerSensor}
                   onChange={(event) => setSelectedTriggerSensor(event.target.value)}
                   disabled={availableSensors.length === 0}
                 >
                   {availableSensors.length === 0 && (
-                    <option value="temperature">Temperature</option>
+                    <option value="temperature">{t('trigger.defaultSensor')}</option>
                   )}
                   {availableSensors.map((sensorKey) => (
                     <option key={sensorKey} value={sensorKey}>
@@ -1683,7 +1678,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                 </select>
               </label>
               <label className="trigger-field">
-                <span>Min</span>
+                <span>{t('chart.min')}</span>
                 <input
                   type="number"
                   step="0.1"
@@ -1692,7 +1687,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                 />
               </label>
               <label className="trigger-field">
-                <span>Max</span>
+                <span>{t('chart.max')}</span>
                 <input
                   type="number"
                   step="0.1"
@@ -1701,7 +1696,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                 />
               </label>
               <label className="trigger-field">
-                <span>Target Device</span>
+                <span>{t('trigger.targetDevice')}</span>
                 <select
                   value={targetTriggerDeviceId || selectedDeviceId}
                   onChange={(event) => setTargetTriggerDeviceId(event.target.value)}
@@ -1716,14 +1711,14 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
               </label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button type="submit" disabled={isSavingTrigger || !selectedDeviceId || (savedFuzzyConfig !== null && !isFuzzyValid)}>
-                  {isSavingTrigger ? 'Saving...' : 'Save Trigger'}
+                  {isSavingTrigger ? t('common.saving') : t('trigger.save')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowFuzzyEditor((s) => !s)}
                   disabled={!selectedDeviceId}
                 >
-                  {showFuzzyEditor ? 'Close Fuzzy Editor' : 'Open Fuzzy Editor'}
+                  {showFuzzyEditor ? t('trigger.closeFuzzy') : t('trigger.openFuzzy')}
                 </button>
               </div>
             </form>
@@ -1735,20 +1730,20 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
             )}
 
             <div className="trigger-list">
-              <h3 className="trigger-list-title">Configured Triggers</h3>
-              {isLoadingTriggers && <p className="dashboard-message">Loading triggers...</p>}
+              <h3 className="trigger-list-title">{t('trigger.configured')}</h3>
+              {isLoadingTriggers && <p className="dashboard-message">{t('trigger.loading')}</p>}
               {!isLoadingTriggers && deviceTriggers.length === 0 && (
-                <p className="dashboard-message">No triggers configured for this device</p>
+                <p className="dashboard-message">{t('trigger.none')}</p>
               )}
               {!isLoadingTriggers && deviceTriggers.length > 0 && (
                 <table className="trigger-table">
                   <thead>
                     <tr>
-                      <th>Sensor</th>
-                      <th>Min</th>
-                      <th>Max</th>
-                      <th>Target Device</th>
-                      <th>Actions</th>
+                      <th>{t('trigger.sensor')}</th>
+                      <th>{t('chart.min')}</th>
+                      <th>{t('chart.max')}</th>
+                      <th>{t('trigger.targetDevice')}</th>
+                      <th>{t('trigger.actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1765,14 +1760,14 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                             onClick={() => handleEditTrigger(trigger)}
                             disabled={deletingSensor === trigger.sensorId}
                           >
-                            Edit
+                            {t('common.edit')}
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteTrigger(trigger.sensorId)}
                             disabled={deletingSensor === trigger.sensorId}
                           >
-                            {deletingSensor === trigger.sensorId ? 'Deleting...' : 'Delete'}
+                            {deletingSensor === trigger.sensorId ? t('common.deleting') : t('common.delete')}
                           </button>
                           <button
                             type="button"
@@ -1786,12 +1781,12 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                                 const res = await evaluateSavedTrigger(selectedDeviceId, trigger.sensorId, inputs)
                                 setPreviewModal({ open: true, sensorId: trigger.sensorId, loading: false, result: res })
                               } catch (e: any) {
-                                setPreviewModal({ open: true, sensorId: trigger.sensorId, loading: false, error: e?.message ?? 'preview failed' })
+                                setPreviewModal({ open: true, sensorId: trigger.sensorId, loading: false, error: e?.message ?? translate('trigger.previewFailed') })
                               }
                             }}
                             disabled={!selectedDeviceId}
                           >
-                            Preview
+                            {t('common.preview')}
                           </button>
                         </td>
                       </tr>
@@ -1809,8 +1804,8 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
           <section className="trigger-events-panel dashboard-card">
             <div className="trigger-panel-header">
               <div>
-                <p className="dashboard-card-eyebrow">Događaji</p>
-                <h2 className="trigger-title">Trigger Događaji</h2>
+                <p className="dashboard-card-eyebrow">{t('events.eyebrow')}</p>
+                <h2 className="trigger-title">{t('events.title')}</h2>
               </div>
             </div>
 
@@ -1818,24 +1813,24 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
               <div className="trigger-event-active">
                 <p className="trigger-event-text">{formatEventDescription(activeTriggerEvent)}</p>
                 <p className="trigger-event-meta">
-                  Uređaj: {activeTriggerEvent.deviceId} · Vreme: {formatEventTime(activeTriggerEvent.timestamp)} · Status: Aktivacija poslata uređaju
+                  {t('events.metaActive', { device: activeTriggerEvent.deviceId, time: formatEventTime(activeTriggerEvent.timestamp) })}
                 </p>
               </div>
             ) : (
-              <p className="dashboard-message">Nema aktivnih trigger alarma</p>
+              <p className="dashboard-message">{t('events.noActive')}</p>
             )}
 
             <div className="trigger-event-history">
-              <h3 className="trigger-list-title">Poslednji događaji</h3>
+              <h3 className="trigger-list-title">{t('events.recent')}</h3>
               {triggerEvents.length === 0 ? (
-                <p className="dashboard-message">Još nema trigger događaja</p>
+                <p className="dashboard-message">{t('events.none')}</p>
               ) : (
                 <ul className="trigger-event-list">
                   {triggerEvents.map((event) => (
                     <li key={event.id} className="trigger-event-item">
                       <p className="trigger-event-text">{formatEventDescription(event)}</p>
                       <p className="trigger-event-meta">
-                        Uređaj: {event.deviceId} · Vreme: {formatEventTime(event.timestamp)}
+                        {t('events.metaItem', { device: event.deviceId, time: formatEventTime(event.timestamp) })}
                       </p>
                     </li>
                   ))}
@@ -1883,23 +1878,32 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Preview Trigger — {previewModal.sensorId ? formatSensorLabel(previewModal.sensorId) : ''}</h3>
+              <h3 style={{ margin: 0 }}>{t('trigger.previewTitle')} — {previewModal.sensorId ? formatSensorLabel(previewModal.sensorId) : ''}</h3>
               <div>
-                <button type="button" onClick={() => setPreviewModal({ open: false, loading: false })}>Close</button>
+                <button type="button" onClick={() => setPreviewModal({ open: false, loading: false })}>{t('common.close')}</button>
               </div>
             </div>
 
             <div>
               {previewModal.loading ? (
-                <p>Loading preview…</p>
+                <p>{t('trigger.previewLoading')}</p>
               ) : previewModal.error ? (
-                <div className="dashboard-message">Error: {previewModal.error}</div>
+                <div className="dashboard-message">{t('common.error')}: {previewModal.error}</div>
               ) : (
                 <pre style={{ maxHeight: '60vh', overflow: 'auto', background: '#f7f7f7', padding: 12 }}>{JSON.stringify(previewModal.result, null, 2)}</pre>
               )}
             </div>
           </div>
         </div>
+      )}
+
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => setSettingsOpen(false)}
+          organizations={session?.role === 'admin' ? organizations : undefined}
+          selectedOrganizationScope={selectedOrganizationScope}
+          onOrganizationChange={handleOrganizationScopeChange}
+        />
       )}
     </main>
   )

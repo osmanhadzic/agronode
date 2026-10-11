@@ -1,5 +1,7 @@
 import { memo } from 'react'
 
+import { useI18n } from '../i18n'
+
 type DeviceSelectorProps = {
   devices: string[]
   selectedDeviceId: string
@@ -13,6 +15,7 @@ export const DeviceSelector = memo(function DeviceSelector({
   onChange,
   deviceTypes,
 }: DeviceSelectorProps) {
+  const { t } = useI18n()
   const formatDeviceLabel = (deviceId: string) => {
     const deviceType = deviceTypes?.[deviceId]
     if (!deviceType || deviceType === 'unknown') {
@@ -24,7 +27,7 @@ export const DeviceSelector = memo(function DeviceSelector({
 
   return (
     <div className="device-selector">
-      <label htmlFor="device-select">Uređaj</label>
+      <label htmlFor="device-select">{t('device.label')}</label>
       <select
         id="device-select"
         value={selectedDeviceId}
