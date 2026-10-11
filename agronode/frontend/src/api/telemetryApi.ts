@@ -19,6 +19,8 @@ export interface StreamControlResponse {
   streaming: boolean
 }
 import type {
+  TelemetryAggregate,
+  TriggerExecutionEvent,
   DeviceSensor,
   SensorTrigger,
   TelemetryReading,
@@ -53,6 +55,40 @@ export async function fetchTelemetryByDeviceId(
   const url = `/api/data/${deviceId}${queryString ? '?' + queryString : ''}`
   
   const { data } = await httpClient.get<TelemetryReading[]>(url)
+  return data
+}
+
+export async function fetchTelemetryAggregate(
+  deviceId: string,
+  dateFilter?: DateFilterOptions,
+): Promise<TelemetryAggregate> {
+  const { data } = await httpClient.get<TelemetryAggregate>(
+    `/api/data/${encodeURIComponent(deviceId)}/aggregate`,
+    {
+      params: {
+        period: dateFilter?.period || undefined,
+        startDate: dateFilter?.startDate,
+        endDate: dateFilter?.endDate,
+      },
+    },
+  )
+  return data
+}
+
+export async function fetchTriggerEvents(
+  deviceId: string,
+  dateFilter?: DateFilterOptions,
+): Promise<TriggerExecutionEvent[]> {
+  const { data } = await httpClient.get<TriggerExecutionEvent[]>(
+    `/api/data/${encodeURIComponent(deviceId)}/trigger-events`,
+    {
+      params: {
+        period: dateFilter?.period || undefined,
+        startDate: dateFilter?.startDate,
+        endDate: dateFilter?.endDate,
+      },
+    },
+  )
   return data
 }
 

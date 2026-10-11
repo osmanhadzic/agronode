@@ -22,8 +22,9 @@ type TelemetryQueryService interface {
 }
 
 type telemetryHandler struct {
-	logger  *slog.Logger
-	service TelemetryQueryService
+	logger     *slog.Logger
+	service    TelemetryQueryService
+	executions TriggerExecutionService
 }
 
 type telemetryResponse struct {
@@ -40,6 +41,11 @@ func RegisterTelemetryRoutes(api *gin.RouterGroup, logger *slog.Logger, service 
 
 	api.GET("/data", handler.getAllData)
 	api.GET("/data/:deviceId", handler.getDataByDeviceID)
+	api.GET("/data/:deviceId/aggregate", handler.getAggregatedData)
+	if executionService, ok := service.(TriggerExecutionService); ok {
+		handler.executions = executionService
+		api.GET("/data/:deviceId/trigger-events", handler.getTriggerEvents)
+	}
 	api.GET("/data/:deviceId/:sensorId", handler.getDataByDeviceAndSensorID)
 	api.GET("/latest/:deviceId", handler.getLatestByDeviceID)
 }

@@ -322,6 +322,51 @@ Possible errors:
 
 ---
 
+### GET /api/data/:deviceId/aggregate
+
+Returns min/max/avg per sensor, grouped into time buckets.
+
+Query params: `period`, `startDate`, `endDate` (same as above) and optional
+`bucket` (`minute`, `5m`, `15m`, `hour`, `day`; default depends on `period`).
+
+Response: `200 OK`
+
+```json
+{
+  "deviceId": "esp32-lab",
+  "bucket": "15m",
+  "buckets": [
+    { "time": "2026-05-14T12:00:00Z", "sensors": { "dht11-temp": { "min": 24, "max": 25, "avg": 24.5, "count": 9 } } }
+  ],
+  "summary": { "dht11-temp": { "min": 20, "max": 28, "avg": 24, "count": 96 } }
+}
+```
+
+---
+
+### GET /api/data/:deviceId/trigger-events
+
+Returns trigger executions (activations) where the device was the source or target, ordered by time.
+Query params: `period`, `startDate`, `endDate`.
+
+Response: `200 OK`
+
+```json
+[
+  {
+    "ruleId": "min-threshold",
+    "deviceId": "pump-1",
+    "sourceDeviceId": "esp32-lab",
+    "sensorId": "dht11-temp",
+    "status": "succeeded",
+    "reason": "source_device=esp32-lab sensor=dht11-temp limit=min value=18.0000 threshold=20.0000",
+    "triggeredAt": "2026-05-14T12:00:00Z"
+  }
+]
+```
+
+---
+
 ### GET /api/data/:deviceId/:sensorId
 
 Returns telemetry history for a specific sensor on a device.

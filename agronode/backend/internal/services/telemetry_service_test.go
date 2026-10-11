@@ -37,8 +37,8 @@ type sensorRepositoryStub struct {
 		deviceID string
 		sensorID string
 	}
-	listResult []models.Sensor
-	listError  error
+	listResult  []models.Sensor
+	listError   error
 	upsertError error
 }
 
@@ -103,6 +103,10 @@ func (stub *triggerRepositoryStub) SaveExecution(_ context.Context, execution mo
 
 	stub.executions = append(stub.executions, execution)
 	return nil
+}
+
+func (stub *triggerRepositoryStub) ListExecutionsByDeviceID(context.Context, string, repositories.DateRange) ([]models.IrrigationExecution, error) {
+	return stub.executions, nil
 }
 
 func (publisher *triggerPublisherStub) PublishActivationCommand(_ context.Context, command mqtt.ActivationCommand) error {

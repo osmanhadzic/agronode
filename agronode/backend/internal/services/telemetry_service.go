@@ -179,7 +179,7 @@ func (service *TelemetryService) GetSensorTrigger(ctx context.Context, deviceID,
 	service.triggerMutex.RLock()
 	deviceTriggers, exists := service.triggers[trimmedDeviceID]
 	if exists {
-			trigger, triggerExists := deviceTriggers[trimmedSensorID]
+		trigger, triggerExists := deviceTriggers[trimmedSensorID]
 		service.triggerMutex.RUnlock()
 		if triggerExists {
 			return trigger, nil
@@ -491,6 +491,18 @@ func (service *TelemetryService) GetTelemetryByDeviceIDWithDateFilter(context co
 
 	dateRange := calculateDateRange(period, startDate, endDate)
 	return service.repository.ListByDeviceIDWithDateRange(context, deviceID, dateRange)
+}
+
+func (service *TelemetryService) ListTriggerExecutions(context context.Context, deviceID string, period string, startDate, endDate *time.Time) ([]models.IrrigationExecution, error) {
+	if service.triggerRepository == nil {
+		return nil, errors.New("trigger repository is not configured")
+	}
+
+	if strings.TrimSpace(deviceID) == "" {
+		return nil, fmt.Errorf("%w: device id is required", ErrValidation)
+	}
+
+	return service.triggerRepository.ListExecutionsByDeviceID(context, deviceID, calculateDateRange(period, startDate, endDate))
 }
 
 func calculateDateRange(period string, startDate, endDate *time.Time) repositories.DateRange {

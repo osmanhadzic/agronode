@@ -278,8 +278,8 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 }
 
 type deviceRegistrationPayload struct {
-	DeviceID        string `json:"deviceId"`
-	FirmwareVersion string `json:"firmware"`
+	DeviceID        string                `json:"deviceId"`
+	FirmwareVersion string                `json:"firmware"`
 	Metadata        models.DeviceMetadata `json:"metadata"`
 	Tags            []string              `json:"tags"`
 }
