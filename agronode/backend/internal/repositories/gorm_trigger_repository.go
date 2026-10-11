@@ -163,6 +163,41 @@ func (repository *GormTriggerRepository) DeleteByDeviceAndSensor(context context
 	return nil
 }
 
+// ListExecutionsByDeviceID returns executions where the device was the target or the source of the trigger.
+func (repository *GormTriggerRepository) ListExecutionsByDeviceID(context context.Context, deviceID string, dateRange DateRange) ([]models.IrrigationExecution, error) {
+	if organizationID, ok := organizationIDFromContext(context); ok {
+		var count int64
+		if err := repository.database.WithContext(context).
+			Model(&models.Device{}).
+			Where("device_id = ? AND organization_id = ?", deviceID, organizationID).
+			Count(&count).Error; err != nil {
+			return nil, err
+		}
+
+		if count == 0 {
+			return nil, ErrNotFound
+		}
+	}
+
+	query := repository.database.WithContext(context).
+		Model(&models.IrrigationExecution{}).
+		Where("(device_id = ? OR reason LIKE ?)", deviceID, "source_device="+deviceID+" %")
+
+	if dateRange.StartDate != nil {
+		query = query.Where("triggered_at >= ?", *dateRange.StartDate)
+	}
+	if dateRange.EndDate != nil {
+		query = query.Where("triggered_at < ?", *dateRange.EndDate)
+	}
+
+	var executions []models.IrrigationExecution
+	if err := query.Order("triggered_at ASC").Find(&executions).Error; err != nil {
+		return nil, err
+	}
+
+	return executions, nil
+}
+
 func (repository *GormTriggerRepository) SaveExecution(context context.Context, execution models.IrrigationExecution) error {
 	entity := execution
 

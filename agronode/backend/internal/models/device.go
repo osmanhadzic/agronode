@@ -42,7 +42,7 @@ func (Device) TableName() string {
 const (
 	DeviceTypeUnknown   = "unknown"
 	DeviceTypePublisher = "publisher"
-	DeviceTypeReceiver   = "receiver"
+	DeviceTypeReceiver  = "receiver"
 
 	DeviceStatusUnknown = "unknown"
 	DeviceStatusOnline  = "online"

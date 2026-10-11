@@ -556,6 +556,30 @@
   font-weight: 700;
 }
 
+.chart-export-button {
+  margin: 0 0 12px;
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chart-export-button:hover {
+  background: #f3f4f6;
+}
+
+.chart-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
 .device-meta-panel {
   display: flex;
   flex-wrap: wrap;

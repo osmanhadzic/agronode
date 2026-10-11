@@ -248,7 +248,6 @@ func toReadings(entities []models.SensorData) []models.TelemetryReading {
 	return readings
 }
 
-
 func sensorIDForReading(reading models.TelemetryReading, sensors map[string]float64) *string {
 	trimmedSensorID := strings.TrimSpace(reading.SensorID)
 	if trimmedSensorID != "" {

@@ -8,6 +8,8 @@ import {
   fetchSensorsByDeviceId,
   fetchSensorTriggerByDeviceId,
   fetchTelemetryByDeviceId,
+  fetchTelemetryAggregate,
+  fetchTriggerEvents,
   fetchTriggersByDeviceId,
   fetchLatestTelemetryByDeviceId,
   saveSensorTriggerByDeviceId,
@@ -27,7 +29,7 @@ import { SensorVisibilitySelector } from '../components/SensorVisibilitySelector
 import FuzzyTriggerEditor from '../components/FuzzyTriggerEditor'
 import { clearSession, loadOrganizationScope, loadSession, saveOrganizationScope } from '../api/session'
 import type { OrganizationSummary } from '../types/organization'
-import type { TelemetryReading, TriggerListItem, DeviceSensor } from '../types/telemetry'
+import type { TelemetryAggregate, TriggerExecutionEvent, TelemetryReading, TriggerListItem, DeviceSensor } from '../types/telemetry'
 
 type TriggerEvent = {
   id: string
@@ -129,6 +131,8 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
   const [customStartDate, setCustomStartDate] = useState<string>()
   const [customEndDate, setCustomEndDate] = useState<string>()
   const [selectedTelemetrySensor, setSelectedTelemetrySensor] = useState('all')
+  const [aggregate, setAggregate] = useState<TelemetryAggregate | null>(null)
+  const [executionEvents, setExecutionEvents] = useState<TriggerExecutionEvent[]>([])
   const [updateQueue, setUpdateQueue] = useState<TelemetryReading[]>([])
   const [streamingByDevice, setStreamingByDevice] = useState<Record<string, boolean>>({})
   const [streamingBySensor, setStreamingBySensor] = useState<Record<string, boolean>>({})
@@ -740,6 +744,41 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
     dataMode,
     dateFilterPeriod,
   ])
+
+  useEffect(() => {
+    if (dataMode !== 'history' || !selectedDeviceId || !dateFilterPeriod) {
+      return
+    }
+
+    let cancelled = false
+    fetchTelemetryAggregate(selectedDeviceId, {
+      period: dateFilterPeriod,
+      startDate: customStartDate,
+      endDate: customEndDate,
+    })
+      .then((result) => {
+        if (!cancelled) setAggregate(result)
+      })
+      .catch(() => {
+        if (!cancelled) setAggregate(null)
+      })
+
+    fetchTriggerEvents(selectedDeviceId, {
+      period: dateFilterPeriod,
+      startDate: customStartDate,
+      endDate: customEndDate,
+    })
+      .then((result) => {
+        if (!cancelled) setExecutionEvents(result)
+      })
+      .catch(() => {
+        if (!cancelled) setExecutionEvents([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [dataMode, selectedDeviceId, dateFilterPeriod, customStartDate, customEndDate])
 
   const selectedDeviceStatus = selectedDeviceId
     ? deviceStatuses[selectedDeviceId] ?? 'unknown'
@@ -1526,6 +1565,16 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
             >
               <TelemetryLineChart
                 data={deviceTelemetry}
+                statsData={
+                  dataMode === 'history'
+                    ? telemetry.filter((reading) => reading.deviceId === selectedDeviceId)
+                    : undefined
+                }
+                mode={dataMode}
+                aggregate={dataMode === 'history' ? aggregate : null}
+                triggers={deviceTriggers}
+                triggerEvents={dataMode === 'history' ? executionEvents : []}
+                deviceId={selectedDeviceId}
                 selectedSensors={visibleSensors}
               />
             </Suspense>

@@ -67,3 +67,28 @@ export interface DeviceSensor {
   createdAt: string
   updatedAt: string
 }
+
+export interface SensorStats {
+  min: number
+  max: number
+  avg: number
+  count: number
+}
+
+export interface TelemetryAggregate {
+  deviceId: string
+  bucket: string
+  buckets: { time: string; sensors: Record<string, SensorStats> }[]
+  summary: Record<string, SensorStats>
+}
+
+export interface TriggerExecutionEvent {
+  ruleId: string
+  deviceId: string
+  sourceDeviceId?: string
+  sensorId?: string
+  status: string
+  reason: string
+  triggeredAt: string
+  error?: string
+}

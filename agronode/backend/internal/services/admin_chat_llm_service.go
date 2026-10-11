@@ -88,11 +88,11 @@ func NewAdminChatLLMService(cfg config.Config) AdminChatLLMService {
 		}
 
 		return &openAIAdminChatLLMService{
-			httpClient: &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second},
-			baseURL: baseURL,
-			apiKey: strings.TrimSpace(cfg.AdminChatLLMAPIKey),
-			chatPath: chatPath,
-			model: model,
+			httpClient:   &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second},
+			baseURL:      baseURL,
+			apiKey:       strings.TrimSpace(cfg.AdminChatLLMAPIKey),
+			chatPath:     chatPath,
+			model:        model,
 			systemPrompt: systemPrompt,
 		}
 	}
@@ -102,9 +102,9 @@ func NewAdminChatLLMService(cfg config.Config) AdminChatLLMService {
 	}
 
 	return &ollamaAdminChatLLMService{
-		httpClient: &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second},
-		baseURL:    baseURL,
-		model:      model,
+		httpClient:   &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second},
+		baseURL:      baseURL,
+		model:        model,
 		systemPrompt: systemPrompt,
 	}
 }
@@ -114,9 +114,9 @@ func (service *ollamaAdminChatLLMService) Enabled() bool {
 }
 
 type ollamaChatRequest struct {
-	Model    string               `json:"model"`
-	Messages []ollamaChatMessage  `json:"messages"`
-	Stream   bool                 `json:"stream"`
+	Model    string              `json:"model"`
+	Messages []ollamaChatMessage `json:"messages"`
+	Stream   bool                `json:"stream"`
 }
 
 type ollamaChatMessage struct {
@@ -182,8 +182,8 @@ func (service *ollamaAdminChatLLMService) GenerateReply(ctx context.Context, use
 }
 
 type openAIChatRequest struct {
-	Model    string               `json:"model"`
-	Messages []ollamaChatMessage  `json:"messages"`
+	Model    string              `json:"model"`
+	Messages []ollamaChatMessage `json:"messages"`
 }
 
 type openAIChatResponse struct {

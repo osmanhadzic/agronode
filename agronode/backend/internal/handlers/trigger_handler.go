@@ -27,19 +27,19 @@ type triggerHandler struct {
 }
 
 type sensorTriggerRequest struct {
-	Min            *float64 `json:"min"`
-	Max            *float64 `json:"max"`
-	TargetDeviceID string   `json:"targetDeviceId"`
+	Min            *float64        `json:"min"`
+	Max            *float64        `json:"max"`
+	TargetDeviceID string          `json:"targetDeviceId"`
 	FuzzyConfig    json.RawMessage `json:"fuzzyConfig,omitempty"`
 }
 
 type sensorTriggerResponse struct {
-	DeviceID       string   `json:"deviceId"`
-	Sensor         string   `json:"sensor,omitempty"`
-	SensorID       string   `json:"sensorId"`
-	Min            *float64 `json:"min,omitempty"`
-	Max            *float64 `json:"max,omitempty"`
-	TargetDeviceID string   `json:"targetDeviceId,omitempty"`
+	DeviceID       string          `json:"deviceId"`
+	Sensor         string          `json:"sensor,omitempty"`
+	SensorID       string          `json:"sensorId"`
+	Min            *float64        `json:"min,omitempty"`
+	Max            *float64        `json:"max,omitempty"`
+	TargetDeviceID string          `json:"targetDeviceId,omitempty"`
 	FuzzyConfig    json.RawMessage `json:"fuzzyConfig,omitempty"`
 }
 
@@ -69,8 +69,8 @@ func RegisterTriggerRoutes(api *gin.RouterGroup, logger *slog.Logger, service Tr
 }
 
 type fuzzyEvaluateRequest struct {
-	Inputs  map[string]float64   `json:"inputs"`
-	Trigger fuzzy.FuzzyTrigger   `json:"trigger"`
+	Inputs  map[string]float64 `json:"inputs"`
+	Trigger fuzzy.FuzzyTrigger `json:"trigger"`
 }
 
 // evaluateFuzzyTrigger accepts a fuzzy trigger and input values and returns evaluation details.
