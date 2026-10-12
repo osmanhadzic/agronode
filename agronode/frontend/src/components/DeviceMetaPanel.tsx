@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { useI18n, type TranslationKey } from '../i18n'
 import type { DeviceMeta } from '../types/telemetry'
 
 type DeviceMetaPanelProps = {
@@ -13,14 +14,16 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m`
 }
 
-function rssiLabel(rssi: number): string {
-  if (rssi >= -50) return 'Excellent'
-  if (rssi >= -60) return 'Good'
-  if (rssi >= -70) return 'Fair'
-  return 'Weak'
+function rssiLabelKey(rssi: number): TranslationKey {
+  if (rssi >= -50) return 'meta.rssi.excellent'
+  if (rssi >= -60) return 'meta.rssi.good'
+  if (rssi >= -70) return 'meta.rssi.fair'
+  return 'meta.rssi.weak'
 }
 
 export const DeviceMetaPanel = memo(function DeviceMetaPanel({ meta }: DeviceMetaPanelProps) {
+  const { t } = useI18n()
+
   if (!meta) return null
 
   const items: { label: string; value: string }[] = []
@@ -28,7 +31,7 @@ export const DeviceMetaPanel = memo(function DeviceMetaPanel({ meta }: DeviceMet
   if (meta.fw) items.push({ label: 'Firmware', value: meta.fw })
   if (meta.ip) items.push({ label: 'IP', value: meta.ip })
   if (meta.rssi !== undefined)
-    items.push({ label: 'Signal', value: `${meta.rssi} dBm (${rssiLabel(meta.rssi)})` })
+    items.push({ label: t('meta.signal'), value: `${meta.rssi} dBm (${t(rssiLabelKey(meta.rssi))})` })
   if (meta.uptime !== undefined)
     items.push({ label: 'Uptime', value: formatUptime(meta.uptime) })
 

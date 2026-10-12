@@ -1,5 +1,6 @@
 import { memo, useState } from 'react'
 import type { DateFilterPeriod } from '../api/telemetryApi'
+import { useI18n } from '../i18n'
 
 interface DateFilterProps {
   onFilterChange: (period: DateFilterPeriod, startDate?: string, endDate?: string) => void
@@ -7,6 +8,7 @@ interface DateFilterProps {
 }
 
 export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPeriod }: DateFilterProps) {
+  const { t } = useI18n()
   const [showCustomRange, setShowCustomRange] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -36,12 +38,12 @@ export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPer
   }
 
   const periods: { value: DateFilterPeriod; label: string }[] = [
-    { value: 'hour', label: 'Sat' },
-    { value: 'day', label: 'Dan' },
-    { value: 'week', label: 'Sedmica' },
-    { value: 'month', label: 'Mjesec' },
-    { value: 'year', label: 'Godina' },
-    { value: 'custom', label: 'Custom' },
+    { value: 'hour', label: t('period.hour') },
+    { value: 'day', label: t('period.day') },
+    { value: 'week', label: t('period.week') },
+    { value: 'month', label: t('period.month') },
+    { value: 'year', label: t('period.year') },
+    { value: 'custom', label: t('period.custom') },
   ]
 
   return (
@@ -59,7 +61,7 @@ export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPer
         ))}
         {selectedPeriod && (
           <button type="button" className="filter-btn reset" onClick={handleReset}>
-            Reset
+            {t('common.reset')}
           </button>
         )}
       </div>
@@ -68,7 +70,7 @@ export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPer
         <div className="custom-range">
           <div className="date-inputs">
             <div className="date-input-group">
-              <label htmlFor="start-date">Od:</label>
+              <label htmlFor="start-date">{t('common.from')}</label>
               <input
                 id="start-date"
                 type="date"
@@ -77,7 +79,7 @@ export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPer
               />
             </div>
             <div className="date-input-group">
-              <label htmlFor="end-date">Do:</label>
+              <label htmlFor="end-date">{t('common.to')}</label>
               <input
                 id="end-date"
                 type="date"
@@ -91,7 +93,7 @@ export const DateFilter = memo(function DateFilter({ onFilterChange, selectedPer
               onClick={handleCustomApply}
               disabled={!startDate || !endDate}
             >
-              Primijeni
+              {t('common.apply')}
             </button>
           </div>
         </div>

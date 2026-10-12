@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom'
 
 import { login } from '../api/authApi'
 import { saveSession } from '../api/session'
+import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { useI18n } from '../i18n'
 
 export function LoginPage() {
+  const { t } = useI18n()
   const [email, setEmail] = useState(import.meta.env.VITE_DEFAULT_LOGIN_EMAIL ?? '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -26,7 +29,7 @@ export function LoginPage() {
         navigate('/org', { replace: true })
       }
     } catch {
-      setError('Invalid email or password')
+      setError(t('login.invalid'))
     } finally {
       setLoading(false)
     }
@@ -35,18 +38,21 @@ export function LoginPage() {
   return (
     <main className="login-page">
       <section className="login-card">
+        <div className="login-language">
+          <LanguageSwitcher />
+        </div>
         <p className="login-eyebrow">AgroNode</p>
-        <h1 className="login-title">Sign in</h1>
-        <p className="login-subtitle">Use your frontend account to access telemetry and device controls.</p>
+        <h1 className="login-title">{t('login.title')}</h1>
+        <p className="login-subtitle">{t('login.subtitle')}</p>
 
         <form className="login-form" onSubmit={handleSubmit}>
           <label className="login-field">
-            <span>Email</span>
+            <span>{t('login.email')}</span>
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
           </label>
 
           <label className="login-field">
-            <span>Password</span>
+            <span>{t('login.password')}</span>
             <div className="login-password-field">
               <input
                 value={password}
@@ -58,8 +64,8 @@ export function LoginPage() {
                 className="login-password-toggle"
                 type="button"
                 onClick={() => setShowPassword((previous) => !previous)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                title={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                title={showPassword ? t('login.hidePassword') : t('login.showPassword')}
               >
                 {showPassword ? (
                   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -107,7 +113,7 @@ export function LoginPage() {
           {error ? <p className="login-error">{error}</p> : null}
 
           <button type="submit" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading ? t('login.submitting') : t('login.submit')}
           </button>
         </form>
       </section>
