@@ -22,25 +22,8 @@ func ValidateFuzzyTrigger(trigger FuzzyTrigger) error {
 		if mf.Name == "" {
 			return fmt.Errorf("%w: membership function #%d has empty name", ErrInvalidFuzzy, i)
 		}
-		if mf.Type != "triangle" && mf.Type != "trapezoid" {
-			return fmt.Errorf("%w: membership %q has unsupported type %q", ErrInvalidFuzzy, mf.Name, mf.Type)
-		}
-		if mf.Type == "triangle" {
-			if len(mf.Parameters) != 3 {
-				return fmt.Errorf("%w: membership %q triangle requires 3 parameters", ErrInvalidFuzzy, mf.Name)
-			}
-			a, b, c := mf.Parameters[0], mf.Parameters[1], mf.Parameters[2]
-			if !(a <= b && b <= c) {
-				return fmt.Errorf("%w: membership %q triangle parameters must satisfy a<=b<=c", ErrInvalidFuzzy, mf.Name)
-			}
-		} else {
-			if len(mf.Parameters) != 4 {
-				return fmt.Errorf("%w: membership %q trapezoid requires 4 parameters", ErrInvalidFuzzy, mf.Name)
-			}
-			a, b, c, d := mf.Parameters[0], mf.Parameters[1], mf.Parameters[2], mf.Parameters[3]
-			if !(a <= b && b <= c && c <= d) {
-				return fmt.Errorf("%w: membership %q trapezoid parameters must satisfy a<=b<=c<=d", ErrInvalidFuzzy, mf.Name)
-			}
+		if err := ValidateMembershipParams(mf.Type, mf.Parameters); err != nil {
+			return fmt.Errorf("%w: membership %q: %v", ErrInvalidFuzzy, mf.Name, err)
 		}
 
 		nameToSensors[mf.Name] = struct{}{}

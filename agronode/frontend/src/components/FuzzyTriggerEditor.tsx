@@ -1,18 +1,27 @@
 import { useEffect, useState } from 'react'
 import { evaluateFuzzyTrigger } from '../api/telemetryApi'
 import type { FuzzyTrigger, EvaluationResult, MembershipFunction } from '../api/telemetryApi'
-import { validateFuzzyConfig } from '../utils/fuzzyValidation'
 import { translate, useI18n } from '../i18n'
+import { validateFuzzyConfig } from '../utils/fuzzyValidation'
+import {
+  evalMembership,
+  membershipExtent,
+  MEMBERSHIP_SPECS,
+  MEMBERSHIP_TYPES,
+  resizeParameters,
+  type MembershipType,
+} from '../utils/membership'
 
 type Props = {
   deviceId: string
   sensorId: string
+  availableSensors?: string[]
   initialFuzzyConfig?: any
   onChange?: (cfg: any) => void
   onValidChange?: (valid: boolean) => void
 }
 
-export function FuzzyTriggerEditor({ deviceId, sensorId, initialFuzzyConfig, onChange, onValidChange }: Props) {
+export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initialFuzzyConfig, onChange, onValidChange }: Props) {
   const { t } = useI18n()
   const [triggerJson, setTriggerJson] = useState<string>(`{
   "name": "Example",
@@ -61,121 +70,6 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, initialFuzzyConfig, onC
     }
   }, [triggerObj, onChange])
 
-  // validate triggerObj and notify parent about validity
-  useEffect(() => {
-    const errors: string[] = []
-    const mfInvalid: number[] = []
-    const mfParamInvalidMap: Record<number, number[]> = {}
-    const ruleNameInvalid: number[] = []
-    const ruleCondInvalid: Record<number, number[]> = {}
-    const ruleActionInvalid: number[] = []
-    const cfg = triggerObj
-    if (!cfg) {
-      setValidationErrors([])
-      if (typeof onValidChange === 'function') onValidChange(true)
-      return
-    }
-
-    if (!Array.isArray(cfg.membershipFunctions)) {
-      errors.push(translate('fuzzy.err.mfArray'))
-    } else if (cfg.membershipFunctions.length === 0) {
-      errors.push(translate('fuzzy.err.noMembership'))
-    } else {
-      cfg.membershipFunctions.forEach((mf: any, idx: number) => {
-        if (!mf.name || typeof mf.name !== 'string') {
-          errors.push(translate('fuzzy.err.membershipName'))
-          mfInvalid.push(idx)
-          return
-        }
-        if (mf.type !== 'triangle' && mf.type !== 'trapezoid') {
-          errors.push(translate('fuzzy.err.mfType', { name: mf.name }))
-          mfInvalid.push(idx)
-          return
-        }
-        if (!Array.isArray(mf.parameters) || mf.parameters.some((p: any) => typeof p !== 'number')) {
-          errors.push(translate('fuzzy.err.mfParams', { name: mf.name }))
-          mfParamInvalidMap[idx] = mf.parameters.map((p: any, pi: number) => (typeof p !== 'number' ? pi : -1)).filter((v: number) => v >= 0)
-          return
-        }
-        // parameter count checks
-        if (mf.type === 'triangle' && mf.parameters.length !== 3) {
-          errors.push(translate('fuzzy.err.triangleParams', { name: mf.name }))
-          mfParamInvalidMap[idx] = mf.parameters.map((_: any, pi: number) => pi)
-          return
-        }
-        if (mf.type === 'trapezoid' && mf.parameters.length !== 4) {
-          errors.push(translate('fuzzy.err.trapezoidParams', { name: mf.name }))
-          mfParamInvalidMap[idx] = mf.parameters.map((_: any, pi: number) => pi)
-          return
-        }
-        // ordering checks: mark specific parameter indexes that violate ordering
-        if (mf.type === 'triangle') {
-          const [a, b, c] = mf.parameters
-          const bad: number[] = []
-          if (!(a < b)) {
-            bad.push(0)
-            bad.push(1)
-          }
-          if (!(b < c)) {
-            bad.push(1)
-            bad.push(2)
-          }
-          if (bad.length > 0) mfParamInvalidMap[idx] = Array.from(new Set(bad))
-        } else {
-          const [a, b, c, d] = mf.parameters
-          const bad: number[] = []
-          if (!(a <= b)) { bad.push(0); bad.push(1) }
-          if (!(b <= c)) { bad.push(1); bad.push(2) }
-          if (!(c <= d)) { bad.push(2); bad.push(3) }
-          if (bad.length > 0) mfParamInvalidMap[idx] = Array.from(new Set(bad))
-        }
-      })
-    }
-
-    if (!Array.isArray(cfg.rules)) {
-      errors.push(translate('fuzzy.err.rulesArray'))
-    } else {
-      const mfNames = new Set((cfg.membershipFunctions || []).map((m: any) => m.name))
-      cfg.rules.forEach((r: any, rIdx: number) => {
-        if (!r.name) {
-          errors.push(translate('fuzzy.err.ruleName'))
-          ruleNameInvalid.push(rIdx)
-          return
-        }
-        if (!Array.isArray(r.conditions) || r.conditions.length === 0) {
-          errors.push(translate('fuzzy.err.ruleNoCondition', { rule: r.name }))
-          ruleCondInvalid[rIdx] = []
-          return
-        }
-        r.conditions.forEach((c: any, cIdx: number) => {
-          if (!c.membership) {
-            errors.push(translate('fuzzy.err.ruleNoMembership', { rule: r.name }))
-            ruleCondInvalid[rIdx] = ruleCondInvalid[rIdx] || []
-            ruleCondInvalid[rIdx].push(cIdx)
-            return
-          }
-          if (!mfNames.has(c.membership)) {
-            errors.push(translate('fuzzy.err.ruleUnknownMf', { rule: r.name, membership: c.membership }))
-            ruleCondInvalid[rIdx] = ruleCondInvalid[rIdx] || []
-            ruleCondInvalid[rIdx].push(cIdx)
-            return
-          }
-        })
-        if (!r.action || typeof r.action.value !== 'number') {
-          errors.push(translate('fuzzy.err.ruleAction', { rule: r.name }))
-          ruleActionInvalid.push(rIdx)
-          return
-        }
-      })
-    }
-
-    setValidationErrors(errors)
-    setInvalidMfIndexes(mfInvalid)
-    setInvalidMfParamIndexesMap(mfParamInvalidMap)
-    setInvalidRuleConditionIndexes(ruleCondInvalid)
-    setInvalidRuleActionIndexes(ruleActionInvalid)
-    if (typeof onValidChange === 'function') onValidChange(errors.length === 0)
-  }, [triggerObj, onValidChange])
   // validate using shared util and notify parent
   useEffect(() => {
     const res = validateFuzzyConfig(triggerObj as any)
@@ -256,21 +150,16 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, initialFuzzyConfig, onC
               <select value={mf.type} onChange={(e) => {
                 const next = { ...(triggerObj as FuzzyTrigger) }
                 next.membershipFunctions[idx].type = e.target.value as any
-                // adjust parameters length
-                if (e.target.value === 'triangle') {
-                  next.membershipFunctions[idx].parameters = next.membershipFunctions[idx].parameters.slice(0, 3)
-                  while (next.membershipFunctions[idx].parameters.length < 3) next.membershipFunctions[idx].parameters.push(0)
-                } else {
-                  for (let i = 0; i < 4; i++) if (next.membershipFunctions[idx].parameters[i] === undefined) next.membershipFunctions[idx].parameters[i] = 0
-                }
+                next.membershipFunctions[idx].parameters = resizeParameters(e.target.value as MembershipType, next.membershipFunctions[idx].parameters)
                 setTriggerObj(next)
               }}>
-                <option value="triangle">{t('fuzzy.triangle')}</option>
-                <option value="trapezoid">{t('fuzzy.trapezoid')}</option>
+                {MEMBERSHIP_TYPES.map((type) => (
+                  <option key={type} value={type}>{MEMBERSHIP_SPECS[type].label}</option>
+                ))}
               </select>
               <div style={{ display: 'flex', gap: 4 }}>
                 {mf.parameters.map((p, pi) => (
-                  <input key={pi} type="number" step="0.1" value={String(p)} onChange={(e) => {
+                  <input key={pi} type="number" step="0.1" value={String(p)} title={MEMBERSHIP_SPECS[mf.type]?.paramNames[pi]} placeholder={MEMBERSHIP_SPECS[mf.type]?.paramNames[pi]} onChange={(e) => {
                     const val = Number(e.target.value)
                     const next = { ...(triggerObj as FuzzyTrigger) }
                     next.membershipFunctions[idx].parameters[pi] = val
@@ -325,11 +214,15 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, initialFuzzyConfig, onC
                     <strong>{t('fuzzy.conditions')}</strong>
                     {(rule.conditions || []).map((cond, cIdx) => (
                       <div key={cIdx} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
-                        <input placeholder={t('fuzzy.sensorPlaceholder')} value={cond.sensor} onChange={(e) => {
+                        <select value={cond.sensor} onChange={(e) => {
                           const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                           next.rules[rIdx].conditions[cIdx].sensor = e.target.value
                           setTriggerObj(next)
-                        }} style={{ flex: 1 }} />
+                        }} style={{ flex: 1 }}>
+                          {Array.from(new Set(['', sensorId, ...(availableSensors ?? []), cond.sensor])).map((key) => (
+                            <option key={key} value={key}>{key || 'sensor'}</option>
+                          ))}
+                        </select>
                         <select value={cond.membership} onChange={(e) => {
                           const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                           next.rules[rIdx].conditions[cIdx].membership = e.target.value
@@ -504,10 +397,9 @@ function MembershipsPreview({ membershipFunctions }: { membershipFunctions: Memb
   let min = Infinity
   let max = -Infinity
   membershipFunctions.forEach((mf) => {
-    mf.parameters.forEach((p) => {
-      if (p < min) min = p
-      if (p > max) max = p
-    })
+    const [lo, hi] = membershipExtent(mf)
+    if (lo < min) min = lo
+    if (hi > max) max = hi
   })
   if (!isFinite(min) || !isFinite(max)) { min = 0; max = 1 }
   if (min === max) { max = min + 1 }
@@ -539,20 +431,5 @@ function MembershipsPreview({ membershipFunctions }: { membershipFunctions: Memb
 }
 
 function evalMembershipAt(mf: MembershipFunction, x: number) {
-  const p = mf.parameters
-  if (mf.type === 'triangle') {
-    if (p.length < 3) return 0
-    const a = p[0], b = p[1], c = p[2]
-    if (x <= a || x >= c) return 0
-    if (x === b) return 1
-    if (x > a && x < b) return (x-a)/(b-a)
-    return (c-x)/(c-b)
-  }
-  // trapezoid
-  if (p.length < 4) return 0
-  const a = p[0], b = p[1], c = p[2], d = p[3]
-  if (x <= a || x >= d) return 0
-  if (x >= b && x <= c) return 1
-  if (x > a && x < b) return (x-a)/(b-a)
-  return (d-x)/(d-c)
+  return evalMembership(mf, x)
 }

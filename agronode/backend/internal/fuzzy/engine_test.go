@@ -1,6 +1,7 @@
 package fuzzy
 
 import (
+	"math"
 	"testing"
 )
 
@@ -95,5 +96,52 @@ func TestAndOrCombination(t *testing.T) {
 	}
 	if either != 0.5 {
 		t.Fatalf("OR strength = %v, want 0.5", either)
+	}
+}
+
+func TestExtraMembershipDegrees(t *testing.T) {
+	cases := []struct {
+		name string
+		mf   MembershipFunction
+		x    float64
+		want float64
+	}{
+		{"left_shoulder flat", MembershipFunction{Type: "left_shoulder", Parameters: []float64{10, 20}}, 5, 1},
+		{"left_shoulder slope", MembershipFunction{Type: "left_shoulder", Parameters: []float64{10, 20}}, 15, 0.5},
+		{"left_shoulder zero", MembershipFunction{Type: "left_shoulder", Parameters: []float64{10, 20}}, 25, 0},
+		{"right_shoulder zero", MembershipFunction{Type: "right_shoulder", Parameters: []float64{10, 20}}, 5, 0},
+		{"right_shoulder slope", MembershipFunction{Type: "right_shoulder", Parameters: []float64{10, 20}}, 15, 0.5},
+		{"right_shoulder one", MembershipFunction{Type: "right_shoulder", Parameters: []float64{10, 20}}, 25, 1},
+		{"gaussian center", MembershipFunction{Type: "gaussian", Parameters: []float64{20, 5}}, 20, 1},
+		{"gaussian one sigma", MembershipFunction{Type: "gaussian", Parameters: []float64{20, 5}}, 25, 0.6065306597},
+		{"bell center", MembershipFunction{Type: "bell", Parameters: []float64{5, 2, 20}}, 20, 1},
+		{"bell edge", MembershipFunction{Type: "bell", Parameters: []float64{5, 2, 20}}, 25, 0.5},
+		{"sigmoid center", MembershipFunction{Type: "sigmoid", Parameters: []float64{20, 1}}, 20, 0.5},
+		{"sigmoid negative slope", MembershipFunction{Type: "sigmoid", Parameters: []float64{20, -1}}, 40, 2.0611536e-9},
+	}
+	for _, c := range cases {
+		got, err := c.mf.Degree(c.x)
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", c.name, err)
+		}
+		if math.Abs(got-c.want) > 1e-6 {
+			t.Fatalf("%s: degree(%v) = %v, want %v", c.name, c.x, got, c.want)
+		}
+	}
+}
+
+func TestValidateMembershipParamsErrors(t *testing.T) {
+	bad := []MembershipFunction{
+		{Type: "left_shoulder", Parameters: []float64{20, 10}},
+		{Type: "right_shoulder", Parameters: []float64{1}},
+		{Type: "gaussian", Parameters: []float64{0, 0}},
+		{Type: "bell", Parameters: []float64{0, 2, 1}},
+		{Type: "sigmoid", Parameters: []float64{1, 0}},
+		{Type: "unknown", Parameters: nil},
+	}
+	for _, mf := range bad {
+		if err := ValidateMembershipParams(mf.Type, mf.Parameters); err == nil {
+			t.Fatalf("expected error for %s %v", mf.Type, mf.Parameters)
+		}
 	}
 }
