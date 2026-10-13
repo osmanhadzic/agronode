@@ -1725,7 +1725,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
 
             {showFuzzyEditor && selectedDeviceId && (
               <div style={{ marginTop: 12 }}>
-                <FuzzyTriggerEditor deviceId={selectedDeviceId} sensorId={activeTriggerSensor} initialFuzzyConfig={savedFuzzyConfig} onChange={(cfg) => setSavedFuzzyConfig(cfg)} onValidChange={(v) => setIsFuzzyValid(v)} />
+                <FuzzyTriggerEditor deviceId={selectedDeviceId} sensorId={activeTriggerSensor} availableSensors={availableSensors} initialFuzzyConfig={savedFuzzyConfig} onChange={(cfg) => setSavedFuzzyConfig(cfg)} onValidChange={(v) => setIsFuzzyValid(v)} />
               </div>
             )}
 

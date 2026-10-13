@@ -2,6 +2,7 @@ package fuzzy
 
 import (
 	"errors"
+	"fmt"
 	"math"
 )
 
@@ -12,6 +13,16 @@ func (mf MembershipFunction) Degree(x float64) (float64, error) {
 		return triangleDegree(x, mf.Parameters)
 	case "trapezoid":
 		return trapezoidDegree(x, mf.Parameters)
+	case "left_shoulder":
+		return leftShoulderDegree(x, mf.Parameters)
+	case "right_shoulder":
+		return rightShoulderDegree(x, mf.Parameters)
+	case "gaussian":
+		return gaussianDegree(x, mf.Parameters)
+	case "bell":
+		return bellDegree(x, mf.Parameters)
+	case "sigmoid":
+		return sigmoidDegree(x, mf.Parameters)
 	default:
 		return 0, errors.New("unsupported membership function type")
 	}
@@ -68,6 +79,107 @@ func trapezoidDegree(x float64, p []float64) (float64, error) {
 
 	// x between c and d
 	return (d - x) / (d - c), nil
+}
+
+// ValidateMembershipParams checks parameter count and constraints for a membership function type.
+func ValidateMembershipParams(mfType string, p []float64) error {
+	switch mfType {
+	case "triangle":
+		if len(p) != 3 {
+			return errors.New("triangle requires 3 parameters")
+		}
+		if !(p[0] <= p[1] && p[1] <= p[2]) {
+			return errors.New("triangle parameters must satisfy a<=b<=c")
+		}
+	case "trapezoid":
+		if len(p) != 4 {
+			return errors.New("trapezoid requires 4 parameters")
+		}
+		if !(p[0] <= p[1] && p[1] <= p[2] && p[2] <= p[3]) {
+			return errors.New("trapezoid parameters must satisfy a<=b<=c<=d")
+		}
+	case "left_shoulder", "right_shoulder":
+		if len(p) != 2 {
+			return fmt.Errorf("%s requires 2 parameters", mfType)
+		}
+		if !(p[0] < p[1]) {
+			return fmt.Errorf("%s parameters must satisfy a<b", mfType)
+		}
+	case "gaussian":
+		if len(p) != 2 {
+			return errors.New("gaussian requires 2 parameters (mean, sigma)")
+		}
+		if !(p[1] > 0) {
+			return errors.New("gaussian sigma must be > 0")
+		}
+	case "bell":
+		if len(p) != 3 {
+			return errors.New("bell requires 3 parameters (width, slope, center)")
+		}
+		if !(p[0] > 0 && p[1] > 0) {
+			return errors.New("bell width and slope must be > 0")
+		}
+	case "sigmoid":
+		if len(p) != 2 {
+			return errors.New("sigmoid requires 2 parameters (center, slope)")
+		}
+		if p[1] == 0 {
+			return errors.New("sigmoid slope must not be 0")
+		}
+	default:
+		return errors.New("unsupported membership function type")
+	}
+	return nil
+}
+
+func leftShoulderDegree(x float64, p []float64) (float64, error) {
+	if err := ValidateMembershipParams("left_shoulder", p); err != nil {
+		return 0, err
+	}
+	a, b := p[0], p[1]
+	switch {
+	case x <= a:
+		return 1, nil
+	case x >= b:
+		return 0, nil
+	}
+	return (b - x) / (b - a), nil
+}
+
+func rightShoulderDegree(x float64, p []float64) (float64, error) {
+	if err := ValidateMembershipParams("right_shoulder", p); err != nil {
+		return 0, err
+	}
+	a, b := p[0], p[1]
+	switch {
+	case x <= a:
+		return 0, nil
+	case x >= b:
+		return 1, nil
+	}
+	return (x - a) / (b - a), nil
+}
+
+func gaussianDegree(x float64, p []float64) (float64, error) {
+	if err := ValidateMembershipParams("gaussian", p); err != nil {
+		return 0, err
+	}
+	d := (x - p[0]) / p[1]
+	return math.Exp(-0.5 * d * d), nil
+}
+
+func bellDegree(x float64, p []float64) (float64, error) {
+	if err := ValidateMembershipParams("bell", p); err != nil {
+		return 0, err
+	}
+	return 1 / (1 + math.Pow(math.Abs((x-p[2])/p[0]), 2*p[1])), nil
+}
+
+func sigmoidDegree(x float64, p []float64) (float64, error) {
+	if err := ValidateMembershipParams("sigmoid", p); err != nil {
+		return 0, err
+	}
+	return 1 / (1 + math.Exp(-p[1]*(x-p[0]))), nil
 }
 
 // EvaluateTrigger runs the fuzzy engine for a trigger and input values.

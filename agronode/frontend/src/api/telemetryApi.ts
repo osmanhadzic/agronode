@@ -198,7 +198,7 @@ export async function sendDeviceStreamControl(
 export interface MembershipFunction {
   name: string
   sensor?: string
-  type: 'triangle' | 'trapezoid'
+  type: 'triangle' | 'trapezoid' | 'left_shoulder' | 'right_shoulder' | 'gaussian' | 'bell' | 'sigmoid'
   parameters: number[]
 }
 

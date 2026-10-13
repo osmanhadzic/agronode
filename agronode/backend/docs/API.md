@@ -796,3 +796,17 @@ Message shape:
   "createdAt": "2026-05-14T12:00:00Z"
 }
 ```
+
+## Fuzzy membership function types
+
+Fuzzy triggers accept these `membershipFunctions[].type` values:
+
+| Type | Parameters | Rules |
+|------|------------|-------|
+| `triangle` | `[a, b, c]` | `a <= b <= c` |
+| `trapezoid` | `[a, b, c, d]` | `a <= b <= c <= d` |
+| `left_shoulder` | `[a, b]` | `a < b`; degree 1 up to `a`, falls linearly to 0 at `b` |
+| `right_shoulder` | `[a, b]` | `a < b`; degree 0 up to `a`, rises linearly to 1 at `b` |
+| `gaussian` | `[mean, sigma]` | `sigma > 0` |
+| `bell` | `[width, slope, center]` | `width > 0`, `slope > 0`; `1 / (1 + abs((x-center)/width)^(2*slope))` |
+| `sigmoid` | `[center, slope]` | `slope != 0`; negative slope gives a falling curve |

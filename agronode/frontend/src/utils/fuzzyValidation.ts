@@ -1,4 +1,5 @@
 // validation util for fuzzy triggers
+import { checkMembershipParameters, isMembershipType } from './membership'
 
 import { translate } from '../i18n'
 
@@ -32,8 +33,8 @@ export function validateFuzzyConfig(cfg: any): ValidationResult {
         mfInvalid.push(idx)
         return
       }
-      if (mf.type !== 'triangle' && mf.type !== 'trapezoid') {
-        errors.push(translate('fuzzy.err.mfType', { name: mf.name }))
+      if (!isMembershipType(mf.type)) {
+        errors.push(`Membership function ${mf.name} has invalid type`)
         mfInvalid.push(idx)
         return
       }
@@ -42,31 +43,10 @@ export function validateFuzzyConfig(cfg: any): ValidationResult {
         mfParamInvalidMap[idx] = mf.parameters.map((p: any, pi: number) => (typeof p !== 'number' ? pi : -1)).filter((v: number) => v >= 0)
         return
       }
-      if (mf.type === 'triangle' && mf.parameters.length !== 3) {
-        errors.push(translate('fuzzy.err.triangleParams', { name: mf.name }))
-        mfParamInvalidMap[idx] = mf.parameters.map((_: any, pi: number) => pi)
-        return
-      }
-      if (mf.type === 'trapezoid' && mf.parameters.length !== 4) {
-        errors.push(translate('fuzzy.err.trapezoidParams', { name: mf.name }))
-        mfParamInvalidMap[idx] = mf.parameters.map((_: any, pi: number) => pi)
-        return
-      }
-
-      // ordering checks
-      if (mf.type === 'triangle') {
-        const [a, b, c] = mf.parameters
-        const bad: number[] = []
-        if (!(a < b)) { bad.push(0); bad.push(1) }
-        if (!(b < c)) { bad.push(1); bad.push(2) }
-        if (bad.length > 0) mfParamInvalidMap[idx] = Array.from(new Set(bad))
-      } else {
-        const [a, b, c, d] = mf.parameters
-        const bad: number[] = []
-        if (!(a <= b)) { bad.push(0); bad.push(1) }
-        if (!(b <= c)) { bad.push(1); bad.push(2) }
-        if (!(c <= d)) { bad.push(2); bad.push(3) }
-        if (bad.length > 0) mfParamInvalidMap[idx] = Array.from(new Set(bad))
+      const check = checkMembershipParameters(mf.type, mf.name, mf.parameters)
+      if (check) {
+        errors.push(check.error)
+        mfParamInvalidMap[idx] = check.badIndexes
       }
     })
   }
