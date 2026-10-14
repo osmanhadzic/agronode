@@ -10,6 +10,7 @@ Go-based REST API and real-time WebSocket service for handling MQTT device telem
 
 - Go 1.20+
 - PostgreSQL 14+
+- TimescaleDB 2.x
 - MQTT Broker (Mosquitto or EMQX)
 - Docker & Docker Compose (for containerized development)
 
@@ -41,6 +42,20 @@ cd agronode
 docker compose up -d
 # Backend available at http://localhost:8080
 ```
+
+Device, user, sensor, and trigger records are stored in PostgreSQL. Telemetry
+is written to the TimescaleDB service and historical API endpoints read from
+that same database. Configure its connection with `TSDB_HOST`, `TSDB_PORT`,
+`TSDB_USER`, `TSDB_PASSWORD`, and `TSDB_NAME`; Docker Compose uses the
+`timescaledb` service by default.
+
+Every sensor value is written to its own hypertable named `ts_<sensor_id>` (the old `sensor_data` table was dropped; all reads use these tables), for example `ts_temperature`,
+`ts_humidity` and `ts_signal_strength`, with columns `time, device_id, value`.
+The table is created automatically on the first reading of a sensor and listed
+in `sensor_series_tables`. Names are sanitized (`[a-z0-9_]`, hash suffix when
+the id is not already a safe identifier). Note that many distinct sensor ids
+mean many hypertables and chunks. To run the Timescale integration test, set
+`TSDB_TEST_DSN`.
 
 ---
 

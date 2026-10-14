@@ -46,8 +46,26 @@ func main() {
 	}
 	defer rawDatabase.Close()
 
+	timescaleConnection, err := database.ConnectTimescale(startupContext, cfg, logger)
+	if err != nil {
+		logger.Error("timescaledb connection failed", "error", err)
+		os.Exit(1)
+	}
+
+	if err := database.RunTimescaleMigrations(startupContext, timescaleConnection, logger); err != nil {
+		logger.Error("timescaledb migration failed", "error", err)
+		os.Exit(1)
+	}
+
+	rawTimescale, err := timescaleConnection.DB()
+	if err != nil {
+		logger.Error("timescaledb handle failed", "error", err)
+		os.Exit(1)
+	}
+	defer rawTimescale.Close()
+
 	store := database.NewStore(databaseConnection)
-	telemetryRepository := repositories.NewGormTelemetryRepository(store.DB)
+	telemetryRepository := repositories.NewGormTelemetryRepository(store.DB, timescaleConnection)
 	sensorRepository := repositories.NewGormSensorRepository(store.DB)
 	triggerRepository := repositories.NewGormTriggerRepository(store.DB)
 	organizationRepository := repositories.NewGormOrganizationRepository(store.DB)
