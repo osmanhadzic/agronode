@@ -111,6 +111,9 @@ void registerDevice() {
 }
 
 void ensureWiFiConnected() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);

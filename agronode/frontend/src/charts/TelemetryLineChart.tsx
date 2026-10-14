@@ -317,7 +317,7 @@ export function TelemetryLineChart({
             return (
             <section key={sensorKey} className="chart-card">
               <h3 className="chart-card-title">{toSensorLabel(sensorKey)}</h3>
-              {stats && (
+              {stats && mode === 'history' && (
                 <div className="chart-stats">
                   <span>{t('chart.min')}: <strong>{stats.min.toFixed(1)}</strong></span>
                   <span>{t('chart.max')}: <strong>{stats.max.toFixed(1)}</strong></span>
