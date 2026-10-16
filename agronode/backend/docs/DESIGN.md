@@ -2,7 +2,7 @@
 
 ## Overview
 
-The backend ingests MQTT telemetry on a per-sensor basis, validates and normalizes readings, stores them in PostgreSQL, evaluates sensor triggers, and serves both REST and WebSocket clients with real-time and historical data.
+The backend ingests MQTT telemetry on a per-sensor basis, validates and normalizes readings, stores them in TimescaleDB, evaluates sensor triggers using relational data in PostgreSQL, and serves REST and WebSocket clients with real-time and historical data.
 
 ---
 
@@ -81,10 +81,9 @@ WebSocket hub for live broadcasting:
 ### 6. Data Layer (models, database)
 
 - `models/device.go` - device with `DeviceType` field
-- `models/sensor_data.go` - telemetry record with `sensor_id` tracking
 - `models/sensor_trigger.go` - trigger configuration
-- `database/postgres.go` - connection pool
-- `database/migrations/` - schema versioning
+- `database/postgres.go` and `database/timescale.go` - relational and time-series connections
+- `database/migrations/` and `database/tsmigrations/` - PostgreSQL and TimescaleDB schema migrations
 
 ---
 
@@ -171,21 +170,22 @@ RealtimeHub.Publish(TelemetryMessage)
 }
 ```
 
-### Storage in PostgreSQL
+### Storage in TimescaleDB
 
 ```sql
--- Table: sensor_data
-CREATE TABLE sensor_data (
-  id INTEGER PRIMARY KEY,
+-- One hypertable per sensor, created on the first reading (ts_<sensor_id>)
+CREATE TABLE ts_temperature (
+  time TIMESTAMPTZ NOT NULL,
   device_id TEXT NOT NULL,
-  sensor_id TEXT,
-  temperature REAL,            -- legacy fallback
-  humidity REAL,               -- legacy fallback
-  sensors JSONB NOT NULL,      -- canonical {"dht11-temp": 24.5, ...}
-  meta JSONB,
-  created_at DATETIME NOT NULL
+  value DOUBLE PRECISION NOT NULL
 );
+SELECT create_hypertable('ts_temperature', 'time');
+-- Registry: sensor_series_tables(sensor_id, table_name, created_at)
 ```
+
+PostgreSQL stores relational records such as devices, users, and triggers.
+Telemetry writes and history queries use TimescaleDB; organization visibility
+for those queries is resolved against the PostgreSQL device records.
 
 ### Retrieval Rules
 

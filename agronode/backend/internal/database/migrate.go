@@ -39,9 +39,14 @@ var orderedMigrations = []migration{
 	{Version: "000019", File: "migrations/000019_rename_asset_hierarchy_tables_generic.up.sql"},
 	{Version: "000021", File: "migrations/000021_create_irrigation_executions.up.sql"},
 	{Version: "000022", File: "migrations/000022_add_fuzzy_config_to_sensor_triggers.up.sql"},
+	{Version: "000023", File: "migrations/000023_move_sensor_data_to_timescaledb.up.sql"},
 }
 
 func RunMigrations(context context.Context, db *gorm.DB, logger *slog.Logger) error {
+	return applyMigrations(context, db, logger, migrationFiles, orderedMigrations)
+}
+
+func applyMigrations(context context.Context, db *gorm.DB, logger *slog.Logger, files embed.FS, migrations []migration) error {
 	if err := db.WithContext(context).Exec(`
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version TEXT PRIMARY KEY,
@@ -51,7 +56,7 @@ func RunMigrations(context context.Context, db *gorm.DB, logger *slog.Logger) er
 		return fmt.Errorf("create schema_migrations table: %w", err)
 	}
 
-	for _, migration := range orderedMigrations {
+	for _, migration := range migrations {
 		var appliedCount int64
 		if err := db.WithContext(context).
 			Raw("SELECT COUNT(1) FROM schema_migrations WHERE version = ?", migration.Version).
@@ -63,7 +68,7 @@ func RunMigrations(context context.Context, db *gorm.DB, logger *slog.Logger) er
 			continue
 		}
 
-		sqlBytes, readErr := migrationFiles.ReadFile(migration.File)
+		sqlBytes, readErr := files.ReadFile(migration.File)
 		if readErr != nil {
 			return fmt.Errorf("read migration %s: %w", migration.File, readErr)
 		}

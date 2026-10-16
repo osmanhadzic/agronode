@@ -11,10 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type telemetryRow struct {
-	SensorID *string
-}
-
 func newTestTelemetryDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -68,105 +64,76 @@ func newTestTelemetryDB(t *testing.T) *gorm.DB {
 		t.Fatalf("create sensors table: %v", err)
 	}
 
-	if err := db.Exec(`
-		CREATE TABLE sensor_data (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			device_id TEXT NOT NULL,
-			sensor_id TEXT,
-			temperature REAL NOT NULL,
-			humidity REAL NOT NULL,
-			sensors TEXT NOT NULL,
-			meta TEXT NOT NULL,
-			created_at DATETIME NOT NULL,
-			FOREIGN KEY(device_id) REFERENCES devices(device_id) ON DELETE CASCADE,
-			FOREIGN KEY(device_id, sensor_id) REFERENCES sensors(device_id, sensor_id) ON DELETE CASCADE
-		);
-	`).Error; err != nil {
-		t.Fatalf("create sensor_data table: %v", err)
+	return db
+}
+
+func newTestTimescaleDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	dsn := fmt.Sprintf("file:%s-timescale?mode=memory&cache=shared", t.Name())
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open timescale sqlite db: %v", err)
 	}
 
-	if err := db.Exec(`
-		CREATE UNIQUE INDEX idx_sensor_data_event_unique ON sensor_data(device_id, created_at, sensors);
-	`).Error; err != nil {
-		t.Fatalf("create sensor_data unique index: %v", err)
+	if err := db.Exec(`CREATE TABLE sensor_series_tables (sensor_id TEXT PRIMARY KEY, table_name TEXT NOT NULL UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).Error; err != nil {
+		t.Fatalf("create registry: %v", err)
 	}
 
 	return db
 }
 
-func TestGormTelemetryRepository_Save(t *testing.T) {
-	t.Run("persists explicit sensor id", func(t *testing.T) {
-		db := newTestTelemetryDB(t)
-		repository := NewGormTelemetryRepository(db)
+func TestGormTelemetryRepository_PerSensorTables(t *testing.T) {
+	relationalDB := newTestTelemetryDB(t)
+	timescaleDB := newTestTimescaleDB(t)
+	repository := NewGormTelemetryRepository(relationalDB, timescaleDB)
+	ctx := context.Background()
 
-		now := time.Now().UTC().Truncate(time.Second)
-		if err := db.Create(&models.Device{DeviceID: "esp32-lab"}).Error; err != nil {
-			t.Fatalf("seed device: %v", err)
-		}
-		if err := db.Create(&models.Sensor{DeviceID: "esp32-lab", SensorID: "temperature", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
-			t.Fatalf("seed sensor: %v", err)
-		}
+	if err := relationalDB.Create(&models.Device{DeviceID: "esp32-lab"}).Error; err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
 
-		sensorID := "temperature"
-		reading := models.TelemetryReading{
-			DeviceID:    "esp32-lab",
-			SensorID:    sensorID,
-			Temperature: 24.5,
-			Humidity:    60,
-			Sensors: map[string]float64{
-				"temperature": 24.5,
-				"humidity":    60,
-			},
-			CreatedAt: now,
+	now := time.Now().UTC().Truncate(time.Second)
+	for sensorID, value := range map[string]float64{"temperature": 24.5, "humidity": 60, "signal_strength": -70} {
+		reading := models.TelemetryReading{DeviceID: "esp32-lab", SensorID: sensorID, Sensors: map[string]float64{sensorID: value}, CreatedAt: now}
+		for i := 0; i < 2; i++ { // second save must be idempotent
+			if err := repository.Save(ctx, reading); err != nil {
+				t.Fatalf("save %s: %v", sensorID, err)
+			}
 		}
+	}
 
-		if err := repository.Save(context.Background(), reading); err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
+	var tableCount int64
+	timescaleDB.Table("sensor_series_tables").Count(&tableCount)
+	if tableCount != 3 {
+		t.Fatalf("expected 3 sensor tables, got %d", tableCount)
+	}
 
-		var row telemetryRow
-		if err := db.Raw(`SELECT sensor_id FROM sensor_data WHERE device_id = ? LIMIT 1`, "esp32-lab").Scan(&row).Error; err != nil {
-			t.Fatalf("load sensor_data row: %v", err)
-		}
+	readings, err := repository.ListByDeviceID(ctx, "esp32-lab")
+	if err != nil || len(readings) != 3 {
+		t.Fatalf("expected 3 readings, got %d (err %v)", len(readings), err)
+	}
 
-		if row.SensorID == nil || *row.SensorID != "temperature" {
-			t.Fatalf("expected sensor_id %q, got %#v", "temperature", row.SensorID)
-		}
-	})
+	bySensor, err := repository.ListByDeviceIDAndSensorID(ctx, "esp32-lab", "humidity")
+	if err != nil || len(bySensor) != 1 || bySensor[0].Humidity != 60 {
+		t.Fatalf("unexpected humidity readings %#v (err %v)", bySensor, err)
+	}
 
-	t.Run("infers sensor id from single sensor map", func(t *testing.T) {
-		db := newTestTelemetryDB(t)
-		repository := NewGormTelemetryRepository(db)
+	latest, err := repository.GetLatestByDeviceID(ctx, "esp32-lab")
+	if err != nil {
+		t.Fatalf("latest: %v", err)
+	}
+	if latest.Temperature != 24.5 || latest.Humidity != 60 || latest.Sensors["signal_strength"] != -70 {
+		t.Fatalf("unexpected latest reading %#v", latest)
+	}
 
-		now := time.Now().UTC().Truncate(time.Second)
-		if err := db.Create(&models.Device{DeviceID: "esp32-lab"}).Error; err != nil {
-			t.Fatalf("seed device: %v", err)
-		}
-		if err := db.Create(&models.Sensor{DeviceID: "esp32-lab", SensorID: "co2", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
-			t.Fatalf("seed sensor: %v", err)
-		}
+	end := now.Add(-time.Hour)
+	ranged, err := repository.ListByDeviceIDWithDateRange(ctx, "esp32-lab", DateRange{EndDate: &end})
+	if err != nil || len(ranged) != 0 {
+		t.Fatalf("expected empty range, got %d (err %v)", len(ranged), err)
+	}
 
-		reading := models.TelemetryReading{
-			DeviceID:    "esp32-lab",
-			Temperature: 0,
-			Humidity:    0,
-			Sensors: map[string]float64{
-				"co2": 420,
-			},
-			CreatedAt: now,
-		}
-
-		if err := repository.Save(context.Background(), reading); err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-
-		var row telemetryRow
-		if err := db.Raw(`SELECT sensor_id FROM sensor_data WHERE device_id = ? LIMIT 1`, "esp32-lab").Scan(&row).Error; err != nil {
-			t.Fatalf("load sensor_data row: %v", err)
-		}
-
-		if row.SensorID == nil || *row.SensorID != "co2" {
-			t.Fatalf("expected sensor_id %q, got %#v", "co2", row.SensorID)
-		}
-	})
+	if _, err := repository.GetLatestByDeviceID(ctx, "unknown"); err != ErrNotFound {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
 }

@@ -24,6 +24,11 @@ type Config struct {
 	DBUser                      string
 	DBPassword                  string
 	DBName                      string
+	TSDBHost                    string
+	TSDBPort                    string
+	TSDBUser                    string
+	TSDBPassword                string
+	TSDBName                    string
 	MQTTBroker                  string
 	MQTTTopic                   string
 	DeviceInactivityMin         string
@@ -56,6 +61,11 @@ func Load() Config {
 		DBUser:                      getEnv("DB_USER", "postgres"),
 		DBPassword:                  getEnv("DB_PASSWORD", "postgres"),
 		DBName:                      getEnv("DB_NAME", "agronode"),
+		TSDBHost:                    getEnv("TSDB_HOST", "timescaledb"),
+		TSDBPort:                    getEnv("TSDB_PORT", "5432"),
+		TSDBUser:                    getEnv("TSDB_USER", "postgres"),
+		TSDBPassword:                getEnv("TSDB_PASSWORD", "postgres"),
+		TSDBName:                    getEnv("TSDB_NAME", "agronode_ts"),
 		MQTTBroker:                  getEnv("MQTT_BROKER", "tcp://mosquitto:1883"),
 		MQTTTopic:                   getEnv("MQTT_TOPIC", "agronode/#"),
 		DeviceInactivityMin:         getEnv("DEVICE_INACTIVITY_MIN", "15"),

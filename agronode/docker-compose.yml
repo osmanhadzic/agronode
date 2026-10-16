@@ -118,6 +118,21 @@ services:
     networks:
       - agronode-net
 
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: agronode-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${TSDB_USER:-postgres}
+      POSTGRES_PASSWORD: ${TSDB_PASSWORD:-postgres}
+      POSTGRES_DB: ${TSDB_NAME:-agronode_ts}
+    ports:
+      - "5433:5432"
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    networks:
+      - agronode-net
+
   backend:
     image: agronode-backend:latest
     build:
@@ -140,6 +155,11 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-agronode}
+      TSDB_HOST: ${TSDB_HOST:-timescaledb}
+      TSDB_PORT: ${TSDB_PORT:-5432}
+      TSDB_USER: ${TSDB_USER:-postgres}
+      TSDB_PASSWORD: ${TSDB_PASSWORD:-postgres}
+      TSDB_NAME: ${TSDB_NAME:-agronode_ts}
 
       # VerneMQ
       MQTT_BROKER: ${MQTT_BROKER:-tcp://vernemq:1883}
@@ -161,6 +181,7 @@ services:
     depends_on:
       - vernemq
       - postgres
+      - timescaledb
     networks:
       - agronode-net
 
@@ -249,6 +270,7 @@ networks:
 
 volumes:
   postgres-data:
+  timescaledb-data:
   vernemq-data:
   prometheus-data:
   grafana-data:
