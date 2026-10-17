@@ -5,12 +5,12 @@ name: Backend CI
     paths:
       - 'backend/**'
       - '.tool-versions'
-      - '.github/workflows/backend-ci.yml'
+      - '.github/workflows/backend-ci.yaml'
   pull_request:
     paths:
       - 'backend/**'
       - '.tool-versions'
-      - '.github/workflows/backend-ci.yml'
+      - '.github/workflows/backend-ci.yaml'
 
 jobs:
   test-and-build:
