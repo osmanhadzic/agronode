@@ -6,6 +6,9 @@ Published telemetry is per-sensor (one message per sensor):
 
 - `dht11-temp`
 - `dht11-humidity`
+- `co2`
+- `soil_moisture`
+- `battery`
 
 Published status metadata goes to dedicated topic:
 

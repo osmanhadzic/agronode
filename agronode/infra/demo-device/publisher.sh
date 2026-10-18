@@ -53,6 +53,12 @@ do
   sleep 1
   publish_sensor "dht11-humidity" "${humidity}" "${timestamp}"
   sleep 1
+  publish_sensor "co2" "$(rand_between 300 1000)" "${timestamp}"
+  sleep 1
+  publish_sensor "soil_moisture" "$(rand_between 0 100)" "${timestamp}"
+  sleep 1
+  publish_sensor "battery" "$(rand_between 0 100)" "${timestamp}"
+  sleep 1
   publish_status "${signal_strength}" "${timestamp}"
 
   sleep "${INTERVAL_SECONDS}"
