@@ -3,11 +3,13 @@ name: Frontend CI
 'on':
   push:
     paths:
-      - 'frontend/**'
+      - 'agronode/frontend/**'
+      - 'agronode/.github/workflows/frontend-ci.yaml'
       - '.github/workflows/frontend-ci.yaml'
   pull_request:
     paths:
-      - 'frontend/**'
+      - 'agronode/frontend/**'
+      - 'agronode/.github/workflows/frontend-ci.yaml'
       - '.github/workflows/frontend-ci.yaml'
 
 jobs:
@@ -15,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: agronode/frontend
 
     steps:
       - name: Checkout
@@ -26,7 +28,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: agronode/frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
