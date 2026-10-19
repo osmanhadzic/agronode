@@ -11,7 +11,17 @@ export type ValidationResult = {
   invalidRuleActionIndexes: number[]
 }
 
-export function validateFuzzyConfig(cfg: any): ValidationResult {
+type UnknownRecord = Record<string, unknown>
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'number')
+}
+
+export function validateFuzzyConfig(cfg: unknown): ValidationResult {
   const errors: string[] = []
   const mfInvalid: number[] = []
   const mfParamInvalidMap: Record<number, number[]> = {}
@@ -22,12 +32,15 @@ export function validateFuzzyConfig(cfg: any): ValidationResult {
     return { errors, invalidMfIndexes: mfInvalid, invalidMfParamIndexesMap: mfParamInvalidMap, invalidRuleConditionIndexes: ruleCondInvalid, invalidRuleActionIndexes: ruleActionInvalid }
   }
 
-  if (!Array.isArray(cfg.membershipFunctions)) {
+  const config = isRecord(cfg) ? cfg : {}
+
+  if (!Array.isArray(config.membershipFunctions)) {
     errors.push(translate('fuzzy.err.mfArray'))
-  } else if (cfg.membershipFunctions.length === 0) {
+  } else if (config.membershipFunctions.length === 0) {
     errors.push(translate('fuzzy.err.noMembership'))
   } else {
-    cfg.membershipFunctions.forEach((mf: any, idx: number) => {
+    config.membershipFunctions.forEach((value, idx) => {
+      const mf = isRecord(value) ? value : {}
       if (!mf.name || typeof mf.name !== 'string') {
         errors.push(translate('fuzzy.err.membershipName'))
         mfInvalid.push(idx)
@@ -38,12 +51,20 @@ export function validateFuzzyConfig(cfg: any): ValidationResult {
         mfInvalid.push(idx)
         return
       }
-      if (!Array.isArray(mf.parameters) || mf.parameters.some((p: any) => typeof p !== 'number')) {
+      if (!isNumberArray(mf.parameters)) {
         errors.push(translate('fuzzy.err.mfParams', { name: mf.name }))
-        mfParamInvalidMap[idx] = mf.parameters.map((p: any, pi: number) => (typeof p !== 'number' ? pi : -1)).filter((v: number) => v >= 0)
+        mfParamInvalidMap[idx] = Array.isArray(mf.parameters)
+          ? mf.parameters.flatMap((parameter, parameterIndex) =>
+              typeof parameter === 'number' ? [] : [parameterIndex],
+            )
+          : []
         return
       }
-      const check = checkMembershipParameters(mf.type, mf.name, mf.parameters)
+      const check = checkMembershipParameters(
+        mf.type,
+        mf.name,
+        mf.parameters,
+      )
       if (check) {
         errors.push(check.error)
         mfParamInvalidMap[idx] = check.badIndexes
@@ -51,50 +72,58 @@ export function validateFuzzyConfig(cfg: any): ValidationResult {
     })
   }
 
-  if (!Array.isArray(cfg.rules)) {
+  if (!Array.isArray(config.rules)) {
     errors.push(translate('fuzzy.err.rulesArray'))
   } else {
-    const mfNames = new Set((cfg.membershipFunctions || []).map((m: any) => m.name))
-    cfg.rules.forEach((r: any, rIdx: number) => {
-      if (!r.name) {
+    const mfNames = new Set(
+      (Array.isArray(config.membershipFunctions) ? config.membershipFunctions : [])
+        .flatMap((value) => isRecord(value) && typeof value.name === 'string' ? [value.name] : []),
+    )
+    config.rules.forEach((value, rIdx) => {
+      const rule = isRecord(value) ? value : {}
+      if (typeof rule.name !== 'string' || !rule.name) {
         errors.push(translate('fuzzy.err.ruleName'))
         return
       }
-      if (!Array.isArray(r.conditions) || r.conditions.length === 0) {
-        errors.push(translate('fuzzy.err.ruleNoCondition', { rule: r.name }))
+      const ruleName = rule.name
+      if (!Array.isArray(rule.conditions) || rule.conditions.length === 0) {
+        errors.push(translate('fuzzy.err.ruleNoCondition', { rule: ruleName }))
         ruleCondInvalid[rIdx] = []
         return
       }
-      r.conditions.forEach((c: any, cIdx: number) => {
-        if (!c.membership) {
-          errors.push(translate('fuzzy.err.ruleNoMembership', { rule: r.name }))
+      rule.conditions.forEach((value, cIdx) => {
+        const condition = isRecord(value) ? value : {}
+        const membership = condition.membership
+        if (typeof membership !== 'string' || !membership) {
+          errors.push(translate('fuzzy.err.ruleNoMembership', { rule: ruleName }))
           ruleCondInvalid[rIdx] = ruleCondInvalid[rIdx] || []
           ruleCondInvalid[rIdx].push(cIdx)
           return
         }
-        if (!mfNames.has(c.membership)) {
-          errors.push(translate('fuzzy.err.ruleUnknownMf', { rule: r.name, membership: c.membership }))
+        if (!mfNames.has(membership)) {
+          errors.push(translate('fuzzy.err.ruleUnknownMf', { rule: ruleName, membership }))
           ruleCondInvalid[rIdx] = ruleCondInvalid[rIdx] || []
           ruleCondInvalid[rIdx].push(cIdx)
           return
         }
       })
-      if (!r.action || typeof r.action.value !== 'number') {
-        errors.push(translate('fuzzy.err.ruleAction', { rule: r.name }))
+      const action = isRecord(rule.action) ? rule.action : null
+      if (!action || typeof action.value !== 'number') {
+        errors.push(translate('fuzzy.err.ruleAction', { rule: ruleName }))
         ruleActionInvalid.push(rIdx)
         return
       }
 
-      if (r.action.type === 'http') {
-        const url = typeof r.action.url === 'string' ? r.action.url.trim() : ''
+      if (action.type === 'http') {
+        const url = typeof action.url === 'string' ? action.url.trim() : ''
         if (!url) {
-          errors.push(translate('fuzzy.err.httpUrl', { rule: r.name }))
+          errors.push(translate('fuzzy.err.httpUrl', { rule: ruleName }))
           ruleActionInvalid.push(rIdx)
           return
         }
 
         if (!/^https?:\/\//i.test(url)) {
-          errors.push(translate('fuzzy.err.httpScheme', { rule: r.name }))
+          errors.push(translate('fuzzy.err.httpScheme', { rule: ruleName }))
           ruleActionInvalid.push(rIdx)
           return
         }

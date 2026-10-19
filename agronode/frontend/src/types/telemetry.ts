@@ -1,3 +1,5 @@
+import type { FuzzyTrigger } from '../api/telemetryApi'
+
 export interface DeviceMeta {
   fw?: string
   ip?: string
@@ -45,7 +47,7 @@ export interface SensorTrigger {
   min?: number
   max?: number
   targetDeviceId?: string
-  fuzzyConfig?: any
+  fuzzyConfig?: FuzzyTrigger
 }
 
 export interface TriggerListItem {

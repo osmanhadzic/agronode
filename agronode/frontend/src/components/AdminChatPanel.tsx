@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { createAdminChatSocket, type AdminChatMessage } from '../api/adminChatSocket'
 import { getLocaleTag, useI18n } from '../i18n'
@@ -18,7 +18,7 @@ export function AdminChatPanel() {
   const [draft, setDraft] = useState('')
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const [sendError, setSendError] = useState(false)
-  const [connection, setConnection] = useState<ReturnType<typeof createAdminChatSocket> | null>(null)
+  const connectionRef = useRef<ReturnType<typeof createAdminChatSocket> | null>(null)
 
   useEffect(() => {
     const socketConnection = createAdminChatSocket(
@@ -30,10 +30,11 @@ export function AdminChatPanel() {
       },
     )
 
-    setConnection(socketConnection)
+    connectionRef.current = socketConnection
 
     return () => {
       socketConnection.disconnect()
+      connectionRef.current = null
     }
   }, [])
 
@@ -56,7 +57,7 @@ export function AdminChatPanel() {
       return
     }
 
-    if (!connection || !connection.sendMessage(text)) {
+    if (!connectionRef.current || !connectionRef.current.sendMessage(text)) {
       setSendError(true)
       return
     }
