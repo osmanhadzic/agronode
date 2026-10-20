@@ -16,6 +16,8 @@ import {
   sendDeviceStreamControl,
   evaluateSavedTrigger,
   type DateFilterPeriod,
+  type EvaluationResult,
+  type FuzzyTrigger,
 } from '../api/telemetryApi'
 import { fetchOrganizations } from '../api/organizationApi'
 import { createDeviceStatusSocket, createTelemetrySocket } from '../api/telemetrySocket'
@@ -32,6 +34,7 @@ import { getLocaleTag, translate, useI18n } from '../i18n'
 import { clearSession, loadOrganizationScope, loadSession, saveOrganizationScope } from '../api/session'
 import type { OrganizationSummary } from '../types/organization'
 import type { TelemetryAggregate, TriggerExecutionEvent, TelemetryReading, TriggerListItem, DeviceSensor } from '../types/telemetry'
+import { validateFuzzyConfig } from '../utils/fuzzyValidation'
 
 type TriggerEvent = {
   id: string
@@ -107,14 +110,18 @@ type DashboardPageProps = {
 }
 
 export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPageProps) {
-  const session = loadSession()
+  const session = useMemo(() => loadSession(), [])
   const { t } = useI18n()
   const sessionRole = session?.role
   const sessionOrganizationId = session?.organizationId
   const isAdmin = sessionRole === 'admin'
   const [organizations, setOrganizations] = useState<OrganizationSummary[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [selectedOrganizationScope, setSelectedOrganizationScope] = useState<number | null>(() => loadOrganizationScope())
+  const [selectedOrganizationScope, setSelectedOrganizationScope] = useState<number | null>(() =>
+    session?.role === 'organization' && session.organizationId
+      ? session.organizationId
+      : loadOrganizationScope(),
+  )
   const activeOrganizationScope = isAdmin ? selectedOrganizationScope ?? undefined : sessionOrganizationId
 
   const [telemetry, setTelemetry] = useState<TelemetryReading[]>([])
@@ -195,12 +202,13 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
   const [isLoadingTriggers, setIsLoadingTriggers] = useState(false)
   const [deletingSensor, setDeletingSensor] = useState('')
   const [showFuzzyEditor, setShowFuzzyEditor] = useState(false)
-  const [savedFuzzyConfig, setSavedFuzzyConfig] = useState<any | null>(null)
+  const [savedFuzzyConfig, setSavedFuzzyConfig] = useState<FuzzyTrigger | null>(null)
+  const [fuzzyConfigLoadedFor, setFuzzyConfigLoadedFor] = useState('')
   const [isFuzzyValid, setIsFuzzyValid] = useState(true)
   const [activeTriggerEvent, setActiveTriggerEvent] = useState<TriggerEvent | null>(null)
   const [triggerEvents, setTriggerEvents] = useState<TriggerEvent[]>([])
   const [toastTriggerEvent, setToastTriggerEvent] = useState<TriggerEvent | null>(null)
-  const [previewModal, setPreviewModal] = useState<{ open: boolean; sensorId?: string; loading: boolean; result?: any; error?: string }>({ open: false, loading: false })
+  const [previewModal, setPreviewModal] = useState<{ open: boolean; sensorId?: string; loading: boolean; result?: EvaluationResult; error?: string }>({ open: false, loading: false })
   const [activeTab, setActiveTab] = useState<'overview' | 'telemetry' | 'sensors' | 'triggers' | 'chat'>('overview')
   const triggerActivationState = useRef<Record<string, { min: boolean; max: boolean }>>({})
   const selectedDeviceRef = useRef('')
@@ -224,7 +232,6 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
       if (loadOrganizationScope() !== sessionOrganizationId) {
         saveOrganizationScope(sessionOrganizationId)
       }
-      setSelectedOrganizationScope(sessionOrganizationId)
       return
     }
 
@@ -258,7 +265,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
     return () => {
       isMounted = false
     }
-  }, [sessionRole, sessionOrganizationId, selectedOrganizationScope])
+  }, [session, sessionRole, sessionOrganizationId, selectedOrganizationScope])
 
   const getReadingSensorValues = useCallback((reading: TelemetryReading): Record<string, number> => {
     const readingSensors = reading.sensors ?? {}
@@ -689,6 +696,7 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
     dateFilterPeriod,
     customStartDate,
     customEndDate,
+    getReadingSensorValues,
     mergeLiveSensorSnapshot,
     mergeTelemetryReadings,
   ])
@@ -1071,22 +1079,27 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
   useEffect(() => {
     let isMounted = true
     if (!showFuzzyEditor || !selectedDeviceId || !activeTriggerSensor) {
-      setSavedFuzzyConfig(null)
-      return () => { isMounted = false }
+      return
     }
 
-    setSavedFuzzyConfig(null)
-    ;(async () => {
-      try {
-        const trigger = await fetchSensorTriggerByDeviceId(selectedDeviceId, activeTriggerSensor)
-        if (!isMounted) return
-        setSavedFuzzyConfig(trigger?.fuzzyConfig ?? null)
-      } catch {
-        if (isMounted) setSavedFuzzyConfig(null)
-      }
-    })()
+    const configKey = `${selectedDeviceId}:${activeTriggerSensor}`
+    void fetchSensorTriggerByDeviceId(selectedDeviceId, activeTriggerSensor)
+      .then((trigger) => {
+        if (isMounted) {
+          setSavedFuzzyConfig(trigger?.fuzzyConfig ?? null)
+          setFuzzyConfigLoadedFor(configKey)
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setSavedFuzzyConfig(null)
+          setFuzzyConfigLoadedFor(configKey)
+        }
+      })
 
-    return () => { isMounted = false }
+    return () => {
+      isMounted = false
+    }
   }, [showFuzzyEditor, selectedDeviceId, activeTriggerSensor])
 
   const refreshDeviceTriggers = async (deviceId: string) => {
@@ -1132,17 +1145,9 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
 
     // client-side validate fuzzy config if present
     if (savedFuzzyConfig) {
-      try {
-        // lazy import shared validator to keep bundles small
-        const { validateFuzzyConfig } = await import('../utils/fuzzyValidation')
-        const res = validateFuzzyConfig(savedFuzzyConfig)
-        if (res.errors.length > 0) {
-          setTriggerError(translate('trigger.err.invalidFuzzyDetail', { detail: res.errors[0] }))
-          setTriggerMessage('')
-          return
-        }
-      } catch (e) {
-        setTriggerError(translate('trigger.err.invalidFuzzy'))
+      const res = validateFuzzyConfig(savedFuzzyConfig)
+      if (res.errors.length > 0) {
+        setTriggerError(translate('trigger.err.invalidFuzzyDetail', { detail: res.errors[0] }))
         setTriggerMessage('')
         return
       }
@@ -1715,7 +1720,12 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowFuzzyEditor((s) => !s)}
+                  onClick={() => {
+                    if (showFuzzyEditor) {
+                      setFuzzyConfigLoadedFor('')
+                    }
+                    setShowFuzzyEditor((show) => !show)
+                  }}
                   disabled={!selectedDeviceId}
                 >
                   {showFuzzyEditor ? t('trigger.closeFuzzy') : t('trigger.openFuzzy')}
@@ -1723,7 +1733,10 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
               </div>
             </form>
 
-            {showFuzzyEditor && selectedDeviceId && (
+            {showFuzzyEditor &&
+              selectedDeviceId &&
+              activeTriggerSensor &&
+              fuzzyConfigLoadedFor === `${selectedDeviceId}:${activeTriggerSensor}` && (
               <div style={{ marginTop: 12 }}>
                 <FuzzyTriggerEditor deviceId={selectedDeviceId} sensorId={activeTriggerSensor} availableSensors={availableSensors} initialFuzzyConfig={savedFuzzyConfig} onChange={(cfg) => setSavedFuzzyConfig(cfg)} onValidChange={(v) => setIsFuzzyValid(v)} />
               </div>
@@ -1780,8 +1793,15 @@ export function DashboardPage({ title = 'AgroNode Dashboard' }: DashboardPagePro
                               try {
                                 const res = await evaluateSavedTrigger(selectedDeviceId, trigger.sensorId, inputs)
                                 setPreviewModal({ open: true, sensorId: trigger.sensorId, loading: false, result: res })
-                              } catch (e: any) {
-                                setPreviewModal({ open: true, sensorId: trigger.sensorId, loading: false, error: e?.message ?? translate('trigger.previewFailed') })
+                              } catch (previewError) {
+                                setPreviewModal({
+                                  open: true,
+                                  sensorId: trigger.sensorId,
+                                  loading: false,
+                                  error: previewError instanceof Error
+                                    ? previewError.message
+                                    : translate('trigger.previewFailed'),
+                                })
                               }
                             }}
                             disabled={!selectedDeviceId}

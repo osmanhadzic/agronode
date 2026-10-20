@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { evaluateFuzzyTrigger } from '../api/telemetryApi'
 import type { FuzzyTrigger, EvaluationResult, MembershipFunction } from '../api/telemetryApi'
 import { translate, useI18n } from '../i18n'
@@ -16,14 +16,12 @@ type Props = {
   deviceId: string
   sensorId: string
   availableSensors?: string[]
-  initialFuzzyConfig?: any
-  onChange?: (cfg: any) => void
+  initialFuzzyConfig?: FuzzyTrigger | string | null
+  onChange?: (cfg: FuzzyTrigger | null) => void
   onValidChange?: (valid: boolean) => void
 }
 
-export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initialFuzzyConfig, onChange, onValidChange }: Props) {
-  const { t } = useI18n()
-  const [triggerJson, setTriggerJson] = useState<string>(`{
+const DEFAULT_TRIGGER_JSON = `{
   "name": "Example",
   "membershipFunctions": [
     { "name": "low", "type": "triangle", "parameters": [0, 10, 20] },
@@ -32,36 +30,58 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
   "rules": [
     { "name": "rule1", "conditions": [{"sensor": "","membership": "low"}], "operator": "AND", "action": {"type": "activate","value": 1} }
   ]
-}`)
+}`
+
+function parseInitialConfig(config: FuzzyTrigger | string | null | undefined): FuzzyTrigger | null {
+  if (config === null || config === undefined) {
+    return null
+  }
+
+  try {
+    return typeof config === 'string' ? JSON.parse(config) as FuzzyTrigger : config
+  } catch {
+    return null
+  }
+}
+
+export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initialFuzzyConfig, onChange, onValidChange }: Props) {
+  const { t } = useI18n()
+  const initialTrigger = parseInitialConfig(initialFuzzyConfig)
+  const [triggerJson, setTriggerJson] = useState<string>(
+    () => initialTrigger ? JSON.stringify(initialTrigger, null, 2) : DEFAULT_TRIGGER_JSON,
+  )
   const [inputsJson, setInputsJson] = useState<string>(`{ "${sensorId}": 12 }`)
   const [result, setResult] = useState<EvaluationResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [triggerObj, setTriggerObj] = useState<FuzzyTrigger | null>(null)
-  const [validationErrors, setValidationErrors] = useState<string[]>([])
-  const [invalidMfIndexes, setInvalidMfIndexes] = useState<number[]>([])
-  const [invalidMfParamIndexesMap, setInvalidMfParamIndexesMap] = useState<Record<number, number[]>>({})
+  const [triggerObj, setTriggerObj] = useState<FuzzyTrigger | null>(
+    () => initialTrigger ?? JSON.parse(DEFAULT_TRIGGER_JSON) as FuzzyTrigger,
+  )
+  const validation = useMemo(() => validateFuzzyConfig(triggerObj), [triggerObj])
+  const {
+    errors: validationErrors,
+    invalidMfIndexes,
+    invalidMfParamIndexesMap,
+    invalidRuleConditionIndexes,
+    invalidRuleActionIndexes,
+  } = validation
   // rule name invalid indexes not used for per-field highlighting currently
-  const [invalidRuleConditionIndexes, setInvalidRuleConditionIndexes] = useState<Record<number, number[]>>({})
-  const [invalidRuleActionIndexes, setInvalidRuleActionIndexes] = useState<number[]>([])
 
-  // keep triggerObj and triggerJson in sync
-  useEffect(() => {
+  const commitTrigger = (next: FuzzyTrigger) => {
+    setTriggerObj(next)
+    setTriggerJson(JSON.stringify(next, null, 2))
+  }
+
+  const handleTriggerJsonChange = (value: string) => {
+    setTriggerJson(value)
     try {
-      const parsed = JSON.parse(triggerJson) as FuzzyTrigger
+      const parsed = JSON.parse(value) as FuzzyTrigger
       setTriggerObj(parsed)
       setError(null)
     } catch {
-      // ignore parse errors here
+      // Keep the last valid trigger while the JSON draft is incomplete.
     }
-  }, [triggerJson])
-
-  useEffect(() => {
-    if (triggerObj) {
-      setTriggerJson(JSON.stringify(triggerObj, null, 2))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [triggerObj])
+  }
 
   // notify parent when trigger object changes
   useEffect(() => {
@@ -70,30 +90,10 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
     }
   }, [triggerObj, onChange])
 
-  // validate using shared util and notify parent
+  // Notify the parent when validation changes.
   useEffect(() => {
-    const res = validateFuzzyConfig(triggerObj as any)
-    setValidationErrors(res.errors)
-    setInvalidMfIndexes(res.invalidMfIndexes)
-    setInvalidMfParamIndexesMap(res.invalidMfParamIndexesMap)
-    setInvalidRuleConditionIndexes(res.invalidRuleConditionIndexes)
-    setInvalidRuleActionIndexes(res.invalidRuleActionIndexes)
-    if (typeof onValidChange === 'function') onValidChange(res.errors.length === 0)
-  }, [triggerObj, onValidChange])
-
-  // initialize from saved config when provided
-  useEffect(() => {
-    // @ts-ignore
-    if (typeof initialFuzzyConfig !== 'undefined' && initialFuzzyConfig !== null) {
-      try {
-        const cfg = typeof initialFuzzyConfig === 'string' ? JSON.parse(initialFuzzyConfig) : initialFuzzyConfig
-        setTriggerObj(cfg)
-        setTriggerJson(JSON.stringify(cfg, null, 2))
-      } catch (e) {
-        // ignore parse errors
-      }
-    }
-  }, [initialFuzzyConfig])
+    if (typeof onValidChange === 'function') onValidChange(validationErrors.length === 0)
+  }, [validationErrors.length, onValidChange])
 
   const handleEvaluate = async () => {
     setError(null)
@@ -102,14 +102,14 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
     let inputs: Record<string, number> | undefined
     try {
       trigger = JSON.parse(triggerJson)
-    } catch (e) {
+    } catch {
       setError(translate('fuzzy.err.triggerJson'))
       return
     }
 
     try {
       inputs = JSON.parse(inputsJson)
-    } catch (e) {
+    } catch {
       setError(translate('fuzzy.err.inputsJson'))
       return
     }
@@ -118,8 +118,12 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
     try {
       const res = await evaluateFuzzyTrigger(deviceId, sensorId, { inputs, trigger })
       setResult(res)
-    } catch (e: any) {
-      setError(e?.message ?? translate('fuzzy.err.evalFailed'))
+    } catch (evaluationError) {
+      setError(
+        evaluationError instanceof Error
+          ? evaluationError.message
+          : translate('fuzzy.err.evalFailed'),
+      )
     } finally {
       setIsLoading(false)
     }
@@ -145,13 +149,13 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
               <input value={mf.name} onChange={(e) => {
                 const next = { ...(triggerObj as FuzzyTrigger) }
                 next.membershipFunctions[idx].name = e.target.value
-                setTriggerObj(next)
+                commitTrigger(next)
               }} style={ invalidMfIndexes.includes(idx) ? { borderColor: '#e66', borderWidth: 1 } : undefined } />
               <select value={mf.type} onChange={(e) => {
                 const next = { ...(triggerObj as FuzzyTrigger) }
-                next.membershipFunctions[idx].type = e.target.value as any
+                next.membershipFunctions[idx].type = e.target.value as MembershipType
                 next.membershipFunctions[idx].parameters = resizeParameters(e.target.value as MembershipType, next.membershipFunctions[idx].parameters)
-                setTriggerObj(next)
+                commitTrigger(next)
               }}>
                 {MEMBERSHIP_TYPES.map((type) => (
                   <option key={type} value={type}>{MEMBERSHIP_SPECS[type].label}</option>
@@ -163,14 +167,14 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                     const val = Number(e.target.value)
                     const next = { ...(triggerObj as FuzzyTrigger) }
                     next.membershipFunctions[idx].parameters[pi] = val
-                    setTriggerObj(next)
+                    commitTrigger(next)
                   }} style={ (invalidMfParamIndexesMap[idx] || []).includes(pi) ? { width: 80, borderColor: '#e66', borderWidth: 1 } : { width: 80 } } />
                 ))}
               </div>
               <button type="button" onClick={() => {
                 const next = { ...(triggerObj as FuzzyTrigger) }
                 next.membershipFunctions.splice(idx, 1)
-                setTriggerObj(next)
+                commitTrigger(next)
               }}>{t('common.remove')}</button>
             </div>
           ))}
@@ -180,7 +184,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
               const name = `mf${(next.membershipFunctions?.length ?? 0) + 1}`
               const mf: MembershipFunction = { name, sensor: '', type: 'triangle', parameters: [0, 10, 20] }
               next.membershipFunctions = [...(next.membershipFunctions || []), mf]
-              setTriggerObj(next)
+              commitTrigger(next)
             }}>{t('fuzzy.addMembership')}</button>
             <button type="button" onClick={() => setTriggerJson(JSON.stringify(triggerObj, null, 2))} style={{ marginLeft: 8 }}>{t('fuzzy.syncJson')}</button>
           </div>
@@ -193,12 +197,12 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                   <input value={rule.name} onChange={(e) => {
                     const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                     next.rules[rIdx].name = e.target.value
-                    setTriggerObj(next)
+                    commitTrigger(next)
                   }} style={{ flex: 1 }} />
                   <select value={rule.operator ?? 'AND'} onChange={(e) => {
                     const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
-                    next.rules[rIdx].operator = e.target.value as any
-                    setTriggerObj(next)
+                    next.rules[rIdx].operator = e.target.value as 'AND' | 'OR'
+                    commitTrigger(next)
                   }}>
                     <option value="AND">AND</option>
                     <option value="OR">OR</option>
@@ -206,7 +210,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                   <button type="button" onClick={() => {
                     const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                     next.rules.splice(rIdx, 1)
-                    setTriggerObj(next)
+                    commitTrigger(next)
                   }}>{t('fuzzy.removeRule')}</button>
                 </div>
 
@@ -217,7 +221,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                         <select value={cond.sensor} onChange={(e) => {
                           const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                           next.rules[rIdx].conditions[cIdx].sensor = e.target.value
-                          setTriggerObj(next)
+                          commitTrigger(next)
                         }} style={{ flex: 1 }}>
                           {Array.from(new Set(['', sensorId, ...(availableSensors ?? []), cond.sensor])).map((key) => (
                             <option key={key} value={key}>{key || 'sensor'}</option>
@@ -226,7 +230,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                         <select value={cond.membership} onChange={(e) => {
                           const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                           next.rules[rIdx].conditions[cIdx].membership = e.target.value
-                          setTriggerObj(next)
+                          commitTrigger(next)
                         }} style={ (invalidRuleConditionIndexes[rIdx] || []).includes(cIdx) ? { borderColor: '#e66', borderWidth: 1 } : undefined }>
                           <option value="">{t('fuzzy.selectMf')}</option>
                           {triggerObj?.membershipFunctions?.map((mf) => (
@@ -236,7 +240,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                         <button type="button" onClick={() => {
                           const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                           next.rules[rIdx].conditions.splice(cIdx, 1)
-                          setTriggerObj(next)
+                          commitTrigger(next)
                         }}>{t('common.remove')}</button>
                       </div>
                     ))}
@@ -245,7 +249,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                       const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                       next.rules[rIdx].conditions = next.rules[rIdx].conditions || []
                       next.rules[rIdx].conditions.push({ sensor: sensorId || '', membership: '' })
-                      setTriggerObj(next)
+                      commitTrigger(next)
                     }}>{t('fuzzy.addCondition')}</button>
                   </div>
                 </div>
@@ -261,7 +265,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                         if (!next.rules[rIdx].action.method) next.rules[rIdx].action.method = 'POST'
                         if (!next.rules[rIdx].action.url) next.rules[rIdx].action.url = ''
                       }
-                      setTriggerObj(next)
+                      commitTrigger(next)
                     }}>
                       <option value="activate">activate</option>
                       <option value="set">set</option>
@@ -271,7 +275,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                       const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                       next.rules[rIdx].action = next.rules[rIdx].action || { type: 'activate', value: 1 }
                       next.rules[rIdx].action.value = Number(e.target.value)
-                      setTriggerObj(next)
+                      commitTrigger(next)
                     }} style={ invalidRuleActionIndexes.includes(rIdx) ? { width: 120, borderColor: '#e66', borderWidth: 1 } : { width: 120 } } />
                   </div>
                   {rule.action?.type === 'http' && (
@@ -280,7 +284,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                         const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                         next.rules[rIdx].action = next.rules[rIdx].action || { type: 'http', value: 1 }
                         next.rules[rIdx].action.method = e.target.value
-                        setTriggerObj(next)
+                        commitTrigger(next)
                       }}>
                         <option value="POST">POST</option>
                         <option value="GET">GET</option>
@@ -291,7 +295,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                         const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                         next.rules[rIdx].action = next.rules[rIdx].action || { type: 'http', value: 1 }
                         next.rules[rIdx].action.url = e.target.value
-                        setTriggerObj(next)
+                        commitTrigger(next)
                       }} style={ invalidRuleActionIndexes.includes(rIdx) ? { flex: 1, borderColor: '#e66', borderWidth: 1 } : { flex: 1 } } />
                     </div>
                   )}
@@ -301,7 +305,7 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                         const next = JSON.parse(JSON.stringify(triggerObj)) as FuzzyTrigger
                         next.rules[rIdx].action = next.rules[rIdx].action || { type: 'http', value: 1 }
                         next.rules[rIdx].action.body = e.target.value
-                        setTriggerObj(next)
+                        commitTrigger(next)
                       }} rows={3} style={{ width: '100%' }} />
                     </div>
                   )}
@@ -314,14 +318,14 @@ export function FuzzyTriggerEditor({ deviceId, sensorId, availableSensors, initi
                 const rName = `rule${(next.rules?.length ?? 0) + 1}`
                 next.rules = next.rules || []
                 next.rules.push({ name: rName, conditions: [{ sensor: sensorId || '', membership: '' }], operator: 'AND', action: { type: 'activate', value: 1 } })
-                setTriggerObj(next)
+                commitTrigger(next)
               }}>{t('fuzzy.addRule')}</button>
             </div>
           </div>
 
           <div style={{ marginTop: 12 }}>
             <label>{t('fuzzy.triggerJson')}</label>
-            <textarea value={triggerJson} onChange={(e) => setTriggerJson(e.target.value)} rows={8} style={{ width: '100%' }} />
+            <textarea value={triggerJson} onChange={(e) => handleTriggerJsonChange(e.target.value)} rows={8} style={{ width: '100%' }} />
           </div>
         </div>
 

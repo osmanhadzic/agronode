@@ -155,7 +155,7 @@ export async function fetchSensorTriggerByDeviceId(
 export async function saveSensorTriggerByDeviceId(
   deviceId: string,
   sensorId: string,
-  payload: { min?: number; max?: number; targetDeviceId?: string; fuzzyConfig?: any },
+  payload: { min?: number; max?: number; targetDeviceId?: string; fuzzyConfig?: FuzzyTrigger },
 ): Promise<SensorTrigger> {
   const encodedSensor = encodeURIComponent(sensorId)
 

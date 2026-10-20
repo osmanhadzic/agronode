@@ -3,13 +3,13 @@ name: Backend CI
 'on':
   push:
     paths:
-      - 'backend/**'
-      - '.tool-versions'
+      - 'agronode/backend/**'
+      - 'agronode/.tool-versions'
       - '.github/workflows/backend-ci.yaml'
   pull_request:
     paths:
-      - 'backend/**'
-      - '.tool-versions'
+      - 'agronode/backend/**'
+      - 'agronode/.tool-versions'
       - '.github/workflows/backend-ci.yaml'
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: backend
+        working-directory: agronode/backend
 
     steps:
       - name: Checkout
@@ -27,7 +27,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.27.2'
-          cache-dependency-path: backend/go.sum
+          cache-dependency-path: agronode/backend/go.sum
 
       - name: Download dependencies
         run: go mod download
