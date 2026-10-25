@@ -18,6 +18,9 @@ import (
 
 var ErrDeviceValidation = errors.New("device validation failed")
 
+// ErrHardwareIDMismatch is returned when a registration carries a hardware ID that differs from the one already stored.
+var ErrHardwareIDMismatch = repositories.ErrHardwareIDMismatch
+
 type DeviceService struct {
 	repository       repositories.DeviceRepository
 	sensorRepository repositories.SensorRepository
@@ -85,10 +88,21 @@ func (service *DeviceService) ListSensors(ctx context.Context, deviceID string) 
 	return service.sensorRepository.ListByDeviceID(ctx, deviceID)
 }
 
-// RegisterDevice registers a new device or returns existing one (idempotent)
-func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error) {
+// RegisterDevice registers a new device or returns existing one (idempotent).
+// hardwareID is the ESP32 factory MAC; it is an identifier only, never proof of ownership.
+// An empty value means "not provided" (e.g. MQTT auto-registration); the HTTP handler requires it.
+func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID string, hardwareID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error) {
 	if err := validateDeviceID(deviceID); err != nil {
 		return nil, err
+	}
+
+	normalizedHardwareID := ""
+	if strings.TrimSpace(hardwareID) != "" {
+		var hardwareErr error
+		normalizedHardwareID, hardwareErr = NormalizeHardwareID(hardwareID)
+		if hardwareErr != nil {
+			return nil, hardwareErr
+		}
 	}
 
 	normalizedTags := normalizeTags(tags)
@@ -109,6 +123,9 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 		if organizationID, hasOrganizationID := tenancy.OrganizationIDFromContext(ctx); hasOrganizationID {
 			globalDevice, globalErr := service.repository.GetByDeviceID(context.Background(), deviceID)
 			if globalErr == nil && globalDevice != nil {
+				if hardwareIDConflicts(globalDevice, normalizedHardwareID) {
+					return nil, ErrHardwareIDMismatch
+				}
 				if globalDevice.OrganizationID == nil || *globalDevice.OrganizationID == 0 {
 					globalDevice.OrganizationID = &organizationID
 					if updateErr := service.repository.Update(context.Background(), globalDevice); updateErr != nil {
@@ -128,6 +145,17 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 
 	if err == nil && existingDevice != nil {
 		shouldUpdate := false
+
+		if normalizedHardwareID != "" {
+			if hardwareIDConflicts(existingDevice, normalizedHardwareID) {
+				return nil, ErrHardwareIDMismatch
+			}
+			if existingDevice.HardwareID == nil || *existingDevice.HardwareID == "" {
+				existingDevice.HardwareID = &normalizedHardwareID
+				shouldUpdate = true
+				service.logAudit("device.hardware_id_set", "deviceId", deviceID, "hardwareId", normalizedHardwareID)
+			}
+		}
 
 		if tags != nil {
 			existingDevice.Tags = normalizedTags
@@ -190,6 +218,10 @@ func (service *DeviceService) RegisterDevice(ctx context.Context, deviceID strin
 		ProvisioningTokenHash: hashDeviceSecret(provisioningToken),
 		CreatedAt:             time.Now(),
 		UpdatedAt:             time.Now(),
+	}
+
+	if normalizedHardwareID != "" {
+		device.HardwareID = &normalizedHardwareID
 	}
 
 	if organizationID, ok := tenancy.OrganizationIDFromContext(ctx); ok {
@@ -458,6 +490,57 @@ func (service *DeviceService) UpdateMetadataFromTelemetry(ctx context.Context, d
 }
 
 // validateDeviceID validates device ID format
+// hardwareIDConflicts reports whether the device already has a different hardware ID.
+func hardwareIDConflicts(device *models.Device, normalizedHardwareID string) bool {
+	return normalizedHardwareID != "" &&
+		device.HardwareID != nil &&
+		*device.HardwareID != "" &&
+		*device.HardwareID != normalizedHardwareID
+}
+
+// NormalizeHardwareID validates an ESP32 factory MAC address and returns it as
+// 12 uppercase hex characters without separators. Accepted inputs are plain,
+// colon-separated or hyphen-separated 6-byte forms (case-insensitive).
+func NormalizeHardwareID(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	invalid := errors.Join(ErrDeviceValidation, errors.New("hardwareId must be a valid MAC address"))
+
+	switch len(value) {
+	case 12:
+	case 17:
+		separator := value[2]
+		if separator != ':' && separator != '-' {
+			return "", invalid
+		}
+		var builder strings.Builder
+		for index := 0; index < len(value); index++ {
+			if index%3 == 2 {
+				if value[index] != separator {
+					return "", invalid
+				}
+				continue
+			}
+			builder.WriteByte(value[index])
+		}
+		value = builder.String()
+	default:
+		return "", invalid
+	}
+
+	value = strings.ToUpper(value)
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'A' || character > 'F') {
+			return "", invalid
+		}
+	}
+
+	if value == "000000000000" || value == "FFFFFFFFFFFF" {
+		return "", invalid
+	}
+
+	return value, nil
+}
+
 func validateDeviceID(deviceID string) error {
 	deviceID = strings.TrimSpace(deviceID)
 	if deviceID == "" {

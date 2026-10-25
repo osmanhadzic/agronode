@@ -15,6 +15,7 @@ type DeviceShadowState map[string]any
 type Device struct {
 	ID                    uint              `gorm:"primaryKey" json:"id"`
 	DeviceID              string            `gorm:"column:device_id;uniqueIndex;not null" json:"deviceId" binding:"required"`
+	HardwareID            *string           `gorm:"column:hardware_id;size:64" json:"hardwareId,omitempty"`
 	OrganizationID        *uint             `gorm:"column:organization_id" json:"organizationId,omitempty"`
 	ZoneID                *uint             `gorm:"column:asset_unit_id" json:"zoneId,omitempty"`
 	DeviceType            string            `gorm:"column:device_type;not null;default:'publisher'" json:"deviceType" binding:"omitempty,oneof=publisher receiver unknown"`

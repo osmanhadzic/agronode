@@ -155,6 +155,7 @@ Request body:
 ```json
 {
   "deviceId": "esp32-lab",
+  "hardwareId": "AA:BB:CC:DD:EE:FF",
   "deviceType": "publisher",
   "firmwareVersion": "v1.2.3",
   "metadata": {
@@ -177,6 +178,7 @@ Response: `200 OK`
 {
   "id": 1,
   "deviceId": "esp32-lab",
+  "hardwareId": "AABBCCDDEEFF",
   "deviceType": "publisher",
   "status": "unknown",
   "firmwareVersion": "v1.2.3",
@@ -196,13 +198,18 @@ Response: `200 OK`
 
 Notes:
 
+- `hardwareId` is required: the ESP32 factory MAC address. Accepted as `AABBCCDDEEFF`, `AA:BB:CC:DD:EE:FF` or `AA-BB-CC-DD-EE-FF` (case-insensitive) and always stored and returned as 12 uppercase hex characters. All-zero and all-FF addresses are rejected.
+- `hardwareId` is an identifier only, not a credential; it does not prove device ownership.
+- A device's `hardwareId` is set once. Re-registering with the same value is idempotent; a different value is rejected with `409` and never overwrites the stored one.
 - `deviceType` is optional (defaults to `publisher`)
 - Only non-empty fields update existing device
 - Device status starts as `unknown` until first telemetry
+- Devices auto-registered over MQTT have no `hardwareId` until they register through this endpoint
 
 Possible errors:
 
-- `400` for invalid device ID or metadata
+- `400` for invalid device ID, hardware ID or metadata
+- `409` if the hardware ID is already used by another device, or the device is already registered with a different hardware ID
 - `500` for server errors
 
 ---

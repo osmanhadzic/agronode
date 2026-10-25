@@ -28,6 +28,7 @@ func newTestSensorDB(t *testing.T) *gorm.DB {
 			organization_id INTEGER,
 			asset_unit_id INTEGER,
 			device_type TEXT NOT NULL DEFAULT 'publisher',
+			hardware_id VARCHAR(64),
 			status TEXT,
 			firmware_version TEXT,
 			metadata TEXT,

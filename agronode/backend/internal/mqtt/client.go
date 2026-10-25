@@ -57,7 +57,7 @@ type ActivationCommand struct {
 }
 
 type DeviceRegistrar interface {
-	RegisterDevice(ctx context.Context, deviceID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
+	RegisterDevice(ctx context.Context, deviceID string, hardwareID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
 }
 
 type Client struct {
@@ -183,7 +183,7 @@ func (client *Client) ensureDeviceRegistration(ctx context.Context, deviceID str
 			registrationContext = tenancy.WithOrganizationID(registrationContext, client.defaultOrganizationID)
 		}
 
-		if _, err := client.registrar.RegisterDevice(registrationContext, deviceID, "publisher", "", models.DeviceMetadata{}, "", "", nil); err != nil {
+		if _, err := client.registrar.RegisterDevice(registrationContext, deviceID, "", "publisher", "", models.DeviceMetadata{}, "", "", nil); err != nil {
 			return nil, err
 		}
 
@@ -229,7 +229,7 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 			registrationContext = tenancy.WithOrganizationID(registrationContext, client.defaultOrganizationID)
 		}
 
-		if _, err := client.registrar.RegisterDevice(registrationContext, registration.DeviceID, "publisher", registration.FirmwareVersion, registration.Metadata, "", "", registration.Tags); err != nil {
+		if _, err := client.registrar.RegisterDevice(registrationContext, registration.DeviceID, "", "publisher", registration.FirmwareVersion, registration.Metadata, "", "", registration.Tags); err != nil {
 			client.logger.Error("device registration from mqtt failed", "deviceId", registration.DeviceID, "error", err)
 			return
 		}
