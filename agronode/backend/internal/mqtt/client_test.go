@@ -64,7 +64,7 @@ type deviceRegistrarStub struct {
 	err           error
 }
 
-func (stub *deviceRegistrarStub) RegisterDevice(ctx context.Context, deviceID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, _ string, _ string, tags []string) (*models.Device, error) {
+func (stub *deviceRegistrarStub) RegisterDevice(ctx context.Context, deviceID string, _ string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, _ string, _ string, tags []string) (*models.Device, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}

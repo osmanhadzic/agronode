@@ -1,0 +1,4 @@
+firmware/**/secrets.h
+infra/vernemq/certs/*
+!infra/vernemq/certs/.gitkeep
+.env

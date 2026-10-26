@@ -30,6 +30,7 @@ type deviceRegistrationServiceStub struct {
 	listSensorsError  error
 	registerInput     *struct {
 		deviceID          string
+		hardwareID        string
 		deviceType        string
 		firmware          string
 		metadata          models.DeviceMetadata
@@ -41,16 +42,17 @@ type deviceRegistrationServiceStub struct {
 	registerError  error
 }
 
-func (stub *deviceRegistrationServiceStub) RegisterDevice(_ context.Context, deviceID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error) {
+func (stub *deviceRegistrationServiceStub) RegisterDevice(_ context.Context, deviceID string, hardwareID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error) {
 	stub.registerInput = &struct {
 		deviceID          string
+		hardwareID        string
 		deviceType        string
 		firmware          string
 		metadata          models.DeviceMetadata
 		apiKey            string
 		provisioningToken string
 		tags              []string
-	}{deviceID: deviceID, deviceType: deviceType, firmware: firmwareVersion, metadata: metadata, apiKey: apiKey, provisioningToken: provisioningToken, tags: tags}
+	}{deviceID: deviceID, hardwareID: hardwareID, deviceType: deviceType, firmware: firmwareVersion, metadata: metadata, apiKey: apiKey, provisioningToken: provisioningToken, tags: tags}
 	if stub.registerError != nil {
 		return nil, stub.registerError
 	}
@@ -196,7 +198,7 @@ func TestRegisterDevice(t *testing.T) {
 		api := router.Group("/api")
 		RegisterDeviceRoutes(api, testDeviceLogger(), service)
 
-		body := `{"deviceId":"esp32-lab","firmwareVersion":"v1.2.3","metadata":{"battery":87.5,"signalStrength":-61,"hardware":{"model":"ESP32","rev":"1"}},"apiKey":"api-key-value","provisioningToken":"provisioning-token-value","tags":["greenhouse","lab"]}`
+		body := `{"deviceId":"esp32-lab","hardwareId":"AA:BB:CC:DD:EE:FF","firmwareVersion":"v1.2.3","metadata":{"battery":87.5,"signalStrength":-61,"hardware":{"model":"ESP32","rev":"1"}},"apiKey":"api-key-value","provisioningToken":"provisioning-token-value","tags":["greenhouse","lab"]}`
 		request := httptest.NewRequest(http.MethodPost, "/api/devices/register", strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
 		addOrganizationHeader(request)
@@ -380,6 +382,65 @@ func TestListDeviceSensors(t *testing.T) {
 
 		if len(responseBody) != 2 {
 			t.Fatalf("expected 2 sensors, got %d", len(responseBody))
+		}
+	})
+}
+
+func TestRegisterDevice_HardwareID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	post := func(service *deviceRegistrationServiceStub, body string) *httptest.ResponseRecorder {
+		router := gin.New()
+		RegisterDeviceRoutes(router.Group("/api"), testDeviceLogger(), service)
+		request := httptest.NewRequest(http.MethodPost, "/api/devices/register", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		addOrganizationHeader(request)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		return recorder
+	}
+
+	t.Run("missing hardware id is rejected", func(t *testing.T) {
+		service := &deviceRegistrationServiceStub{}
+		if recorder := post(service, `{"deviceId":"esp32-lab"}`); recorder.Code != http.StatusBadRequest || service.registerInput != nil {
+			t.Fatalf("expected 400 without service call, got %d", recorder.Code)
+		}
+	})
+
+	t.Run("validation error maps to 400", func(t *testing.T) {
+		service := &deviceRegistrationServiceStub{registerError: errors.Join(services.ErrDeviceValidation, errors.New("hardwareId must be a valid MAC address"))}
+		if recorder := post(service, `{"deviceId":"esp32-lab","hardwareId":"bad"}`); recorder.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", recorder.Code)
+		}
+	})
+
+	t.Run("duplicate hardware id maps to 409", func(t *testing.T) {
+		service := &deviceRegistrationServiceStub{registerError: repositories.ErrDuplicateHardwareID}
+		if recorder := post(service, `{"deviceId":"esp32-lab","hardwareId":"AA:BB:CC:DD:EE:FF"}`); recorder.Code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d", recorder.Code)
+		}
+	})
+
+	t.Run("hardware id mismatch maps to 409", func(t *testing.T) {
+		service := &deviceRegistrationServiceStub{registerError: services.ErrHardwareIDMismatch}
+		if recorder := post(service, `{"deviceId":"esp32-lab","hardwareId":"AA:BB:CC:DD:EE:FF"}`); recorder.Code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d", recorder.Code)
+		}
+	})
+
+	t.Run("whitespace-only hardware id is rejected as validation error", func(t *testing.T) {
+		service := &deviceRegistrationServiceStub{registerError: errors.Join(services.ErrDeviceValidation, errors.New("hardwareId must be a valid MAC address"))}
+		if recorder := post(service, `{"deviceId":"esp32-lab","hardwareId":"   "}`); recorder.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", recorder.Code)
+		}
+	})
+
+	t.Run("hardware id is forwarded and returned", func(t *testing.T) {
+		stored := "AABBCCDDEEFF"
+		service := &deviceRegistrationServiceStub{registerResult: &models.Device{DeviceID: "esp32-lab", HardwareID: &stored}}
+		recorder := post(service, `{"deviceId":"esp32-lab","hardwareId":"aa:bb:cc:dd:ee:ff"}`)
+		if recorder.Code != http.StatusOK || service.registerInput.hardwareID != "aa:bb:cc:dd:ee:ff" || !strings.Contains(recorder.Body.String(), `"hardwareId":"AABBCCDDEEFF"`) {
+			t.Fatalf("unexpected result %d %s", recorder.Code, recorder.Body.String())
 		}
 	})
 }

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"net/http"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"agronode/backend/internal/auth"
 	"agronode/backend/internal/config"
 	"agronode/backend/internal/database"
+	"agronode/backend/internal/handlers"
 	"agronode/backend/internal/mqtt"
 	"agronode/backend/internal/realtime"
 	"agronode/backend/internal/repositories"
@@ -94,6 +97,16 @@ func main() {
 	defer appCancel()
 
 	mqttClient := mqtt.NewClient(cfg.MQTTBroker, cfg.MQTTTopic, cfg.MQTTActivationTopicTemplate, logger, telemetryService)
+	mqttClient.SetCredentials(cfg.MQTTUsername, cfg.MQTTPassword)
+	if cfg.MQTTCAFile != "" {
+		caPEM, readErr := os.ReadFile(cfg.MQTTCAFile)
+		pool := x509.NewCertPool()
+		if readErr != nil || !pool.AppendCertsFromPEM(caPEM) {
+			logger.Error("mqtt ca file unusable", "path", cfg.MQTTCAFile, "error", readErr)
+			os.Exit(1)
+		}
+		mqttClient.SetTLSConfig(&tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12})
+	}
 	mqttClient.SetDeviceRegistrar(deviceService)
 	mqttClient.SetDefaultOrganizationID(cfg.FrontendOrganizationID)
 	telemetryService.SetTriggerPublisher(mqttClient)
@@ -106,7 +119,12 @@ func main() {
 		}
 	}()
 
-	router := server.NewRouter(logger, cfg.SessionSecret, authService, telemetryService, streamControlService, telemetryService, deviceService, organizationService, realtimeHub, adminChatLLM)
+	provisioningRepository := repositories.NewGormProvisioningRepository(store.DB)
+	provisioningService := services.NewDeviceProvisioningService(provisioningRepository, logger)
+	router := server.NewRouter(logger, cfg.SessionSecret, authService, telemetryService, streamControlService, telemetryService, deviceService, organizationService, realtimeHub, adminChatLLM, provisioningService, handlers.ProvisioningOptions{
+		RequireHTTPS:      cfg.RegistrationRequireHTTPS,
+		RegisterRateLimit: cfg.RegistrationRateLimit,
+	})
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.AppPort,
 		Handler:           router,
@@ -141,6 +159,23 @@ func main() {
 			logger.Error("offline detection worker error", "error", err)
 		}
 	}()
+
+	if cfg.VerneMQWebhookAddr != "" {
+		mqttAuthService := services.NewMQTTAuthService(provisioningRepository, cfg.MQTTUsername, cfg.MQTTPassword, logger)
+		webhookServer := &http.Server{
+			Addr:              cfg.VerneMQWebhookAddr,
+			Handler:           server.NewBrokerWebhookRouter(logger, mqttAuthService),
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			logger.Info("vernemq webhook server starting", "addr", cfg.VerneMQWebhookAddr)
+			if err := webhookServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Error("vernemq webhook server failed", "error", err)
+				os.Exit(1)
+			}
+		}()
+		defer webhookServer.Close()
+	}
 
 	go func() {
 		logger.Info("http server starting", "port", cfg.AppPort)

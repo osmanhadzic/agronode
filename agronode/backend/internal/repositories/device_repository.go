@@ -9,6 +9,10 @@ import (
 )
 
 var ErrDeviceNotFound = errors.New("device not found")
+var ErrDuplicateHardwareID = errors.New("hardware id already registered")
+
+// ErrHardwareIDMismatch means the device already exists with a different hardware ID.
+var ErrHardwareIDMismatch = errors.New("device already registered with a different hardware id")
 
 type DeviceListQuery struct {
 	Page   int
