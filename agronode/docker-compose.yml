@@ -1,4 +1,29 @@
 services:
+  traefik:
+    image: traefik:v3.6
+    container_name: agronode-traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=agronode_agronode-net
+      - --entrypoints.web.address=:80
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --ping=true
+    ports:
+      - "80:80"
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    networks:
+      - agronode-net
+
   vernemq:
     image: vernemq/vernemq:1.12.3
     container_name: agronode-vernemq
@@ -71,6 +96,11 @@ services:
     depends_on:
       - prometheus
       - loki
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.grafana.rule=Host(`grafana.${TRAEFIK_DOMAIN:-agronode.localhost}`)
+      - traefik.http.routers.grafana.entrypoints=web
+      - traefik.http.services.grafana.loadbalancer.server.port=3000
     networks:
       - agronode-net
 
@@ -182,6 +212,11 @@ services:
       - vernemq
       - postgres
       - timescaledb
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.backend.rule=Host(`api.${TRAEFIK_DOMAIN:-agronode.localhost}`)
+      - traefik.http.routers.backend.entrypoints=web
+      - traefik.http.services.backend.loadbalancer.server.port=8080
     networks:
       - agronode-net
 
@@ -209,6 +244,11 @@ services:
       - "5173:5173"
     depends_on:
       - backend
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.frontend.rule=Host(`${TRAEFIK_DOMAIN:-agronode.localhost}`)
+      - traefik.http.routers.frontend.entrypoints=web
+      - traefik.http.services.frontend.loadbalancer.server.port=5173
     networks:
       - agronode-net
 
