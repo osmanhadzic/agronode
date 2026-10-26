@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -63,6 +64,9 @@ type DeviceRegistrar interface {
 type Client struct {
 	brokerURL               string
 	topic                   string
+	username                string
+	password                string
+	tlsConfig               *tls.Config
 	activationTopicTemplate string
 	logger                  *slog.Logger
 	consumer                TelemetryConsumer
@@ -115,10 +119,28 @@ func (client *Client) PublishActivationCommand(_ context.Context, command Activa
 	return nil
 }
 
+// SetCredentials sets the broker service-account login used when the broker requires authentication.
+func (client *Client) SetCredentials(username string, password string) {
+	client.username = username
+	client.password = password
+}
+
+// SetTLSConfig sets the TLS settings for ssl:// broker URLs (e.g. a private CA pool).
+func (client *Client) SetTLSConfig(config *tls.Config) {
+	client.tlsConfig = config
+}
+
 func (client *Client) Run(runContext context.Context) error {
 	options := paho.NewClientOptions()
 	options.AddBroker(client.brokerURL)
 	options.SetClientID(fmt.Sprintf("agronode-backend-%d", time.Now().UnixNano()))
+	if client.username != "" {
+		options.SetUsername(client.username)
+		options.SetPassword(client.password)
+	}
+	if client.tlsConfig != nil {
+		options.SetTLSConfig(client.tlsConfig)
+	}
 	options.SetAutoReconnect(true)
 	options.SetConnectRetry(true)
 	options.SetConnectRetryInterval(2 * time.Second)

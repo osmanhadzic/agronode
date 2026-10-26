@@ -31,6 +31,12 @@ type Config struct {
 	TSDBName                    string
 	MQTTBroker                  string
 	MQTTTopic                   string
+	MQTTUsername                string
+	MQTTPassword                string
+	MQTTCAFile                  string
+	VerneMQWebhookAddr          string
+	RegistrationRequireHTTPS    bool
+	RegistrationRateLimit       int
 	DeviceInactivityMin         string
 	DeviceWorkerInterval        string
 	MQTTActivationTopicTemplate string
@@ -68,6 +74,12 @@ func Load() Config {
 		TSDBName:                    getEnv("TSDB_NAME", "agronode_ts"),
 		MQTTBroker:                  getEnv("MQTT_BROKER", "tcp://mosquitto:1883"),
 		MQTTTopic:                   getEnv("MQTT_TOPIC", "agronode/#"),
+		MQTTUsername:                getEnv("MQTT_USERNAME", ""),
+		MQTTPassword:                getEnv("MQTT_PASSWORD", ""),
+		MQTTCAFile:                  getEnv("MQTT_CA_FILE", ""),
+		VerneMQWebhookAddr:          getEnv("VERNEMQ_WEBHOOK_ADDR", ""),
+		RegistrationRequireHTTPS:    getEnvBool("DEVICE_REGISTRATION_REQUIRE_HTTPS", true),
+		RegistrationRateLimit:       getEnvInt("DEVICE_REGISTRATION_RATE_LIMIT_PER_MIN", 10),
 		DeviceInactivityMin:         getEnv("DEVICE_INACTIVITY_MIN", "15"),
 		DeviceWorkerInterval:        getEnv("DEVICE_WORKER_INTERVAL", "1"),
 		MQTTActivationTopicTemplate: getEnv("MQTT_ACTIVATION_TOPIC_TEMPLATE", "agronode/%s/activation"),

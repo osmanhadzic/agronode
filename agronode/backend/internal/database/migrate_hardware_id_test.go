@@ -201,9 +201,14 @@ func countDevices(t *testing.T, db *gorm.DB) int64 {
 }
 
 func TestMigration000024_RegisteredInOrderedMigrations(t *testing.T) {
-	last := orderedMigrations[len(orderedMigrations)-1]
-	if last.Version != hardwareIDMigration || last.File != hardwareIDMigrationStep[0].File {
-		t.Fatalf("expected 000024 to be the last registered migration, got %+v", last)
+	found := false
+	for _, registered := range orderedMigrations {
+		if registered.Version == hardwareIDMigration && registered.File == hardwareIDMigrationStep[0].File {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected 000024 to be registered in orderedMigrations")
 	}
 
 	for _, file := range []string{hardwareIDMigrationStep[0].File} {

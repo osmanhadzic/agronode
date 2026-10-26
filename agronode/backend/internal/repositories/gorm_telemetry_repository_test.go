@@ -43,6 +43,11 @@ func newTestTelemetryDB(t *testing.T) *gorm.DB {
 			discovered_sensors TEXT,
 			api_key_hash TEXT,
 			provisioning_token_hash TEXT,
+			mqtt_username TEXT,
+			mqtt_password_hash TEXT,
+			lifecycle_status TEXT NOT NULL DEFAULT 'pending',
+			registered_at DATETIME,
+			credentials_rotated_at DATETIME,
 			last_seen DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME

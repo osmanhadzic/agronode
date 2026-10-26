@@ -817,3 +817,11 @@ Fuzzy triggers accept these `membershipFunctions[].type` values:
 | `gaussian` | `[mean, sigma]` | `sigma > 0` |
 | `bell` | `[width, slope, center]` | `width > 0`, `slope > 0`; `1 / (1 + abs((x-center)/width)^(2*slope))` |
 | `sigmoid` | `[center, slope]` | `slope != 0`; negative slope gives a falling curve |
+
+## Device provisioning (Phase 2)
+- `POST /api/v1/devices/register` (public, HTTPS, rate limited): `{hardwareId, provisioningToken}` -> 201 `{deviceId, hardwareId, organizationId, assetUnitId, mqtt:{username, clientId, password}}`.
+- `POST /api/devices/provisioning-tokens` (session auth)
+- `POST /api/devices/:deviceId/credentials/rotate` (session auth)
+- `PATCH /api/devices/:deviceId/lifecycle` (session auth)
+
+Details: [docs/DEVICE_PROVISIONING.md](../../docs/DEVICE_PROVISIONING.md).
