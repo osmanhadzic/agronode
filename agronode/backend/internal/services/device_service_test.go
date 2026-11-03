@@ -310,7 +310,7 @@ func TestDeviceService_RegisterDevice_Metadata(t *testing.T) {
 		repository := &deviceRepositoryStub{}
 		service := NewDeviceService(repository, nil)
 
-		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "publisher", "v1.2.3", models.DeviceMetadata{
+		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "", "publisher", "v1.2.3", models.DeviceMetadata{
 			Battery:        &battery,
 			SignalStrength: &signal,
 			Hardware:       map[string]string{"model": "ESP32", "board": "devkit"},
@@ -340,7 +340,7 @@ func TestDeviceService_RegisterDevice_Metadata(t *testing.T) {
 		repository := &deviceRepositoryStub{}
 		service := NewDeviceService(repository, nil)
 
-		_, err := service.RegisterDevice(context.Background(), "esp32-lab", "publisher", "v1.2.3", models.DeviceMetadata{Battery: floatPtr(120)}, "", "", nil)
+		_, err := service.RegisterDevice(context.Background(), "esp32-lab", "", "publisher", "v1.2.3", models.DeviceMetadata{Battery: floatPtr(120)}, "", "", nil)
 		if !errors.Is(err, ErrDeviceValidation) {
 			t.Fatalf("expected ErrDeviceValidation, got %v", err)
 		}
@@ -352,7 +352,7 @@ func TestDeviceService_RegisterDevice_AuthSecrets(t *testing.T) {
 		repository := &deviceRepositoryStub{}
 		service := NewDeviceService(repository, nil)
 
-		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "publisher", "v1.2.3", models.DeviceMetadata{}, "  api-key-value  ", "provisioning-token-value", nil)
+		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "", "publisher", "v1.2.3", models.DeviceMetadata{}, "  api-key-value  ", "provisioning-token-value", nil)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -391,7 +391,7 @@ func TestDeviceService_RegisterDevice_FirmwareUpdate(t *testing.T) {
 		}
 		service := NewDeviceService(repository, nil)
 
-		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "publisher", "v1.1.0", models.DeviceMetadata{}, "", "", nil)
+		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "", "publisher", "v1.1.0", models.DeviceMetadata{}, "", "", nil)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -605,7 +605,7 @@ func TestDeviceService_RegisterDevice_OrganizationAdoption(t *testing.T) {
 		service := NewDeviceService(repository, nil)
 		ctx := tenancy.WithOrganizationID(context.Background(), organizationID)
 
-		device, err := service.RegisterDevice(ctx, "pump-node-1", "receiver", "", models.DeviceMetadata{}, "", "", nil)
+		device, err := service.RegisterDevice(ctx, "pump-node-1", "", "receiver", "", models.DeviceMetadata{}, "", "", nil)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -643,7 +643,7 @@ func TestDeviceService_RegisterDevice_RefreshesExistingMetadataAndTags(t *testin
 		}
 
 		service := NewDeviceService(repository, nil)
-		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "publisher", "1.0.1", models.DeviceMetadata{
+		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "", "publisher", "1.0.1", models.DeviceMetadata{
 			SignalStrength: &signalStrength,
 			Hardware:       map[string]string{"model": "ESP32", "source": "register"},
 		}, "", "", []string{"live", "esp32"})
@@ -671,4 +671,112 @@ func TestDeviceService_RegisterDevice_RefreshesExistingMetadataAndTags(t *testin
 
 func floatPtr(value float64) *float64 {
 	return &value
+}
+
+func TestNormalizeHardwareID(t *testing.T) {
+	valid := []string{"AA:BB:CC:DD:EE:FF", "aa-bb-cc-dd-ee-ff", "aabbccddeeff", "  Aa:bB:cC:dD:eE:fF  "}
+	for _, input := range valid {
+		got, err := NormalizeHardwareID(input)
+		if err != nil || got != "AABBCCDDEEFF" {
+			t.Errorf("NormalizeHardwareID(%q) = %q, %v; want AABBCCDDEEFF", input, got, err)
+		}
+	}
+
+	invalid := []string{"", "   ", "AA:BB:CC:DD:EE", "AA:BB:CC:DD:EE:GG", "AA:BB-CC:DD-EE:FF", "AA.BB.CC.DD.EE.FF", "AABBCCDDEEF", "AABBCCDDEEFFAA", "00:00:00:00:00:00", "FF:FF:FF:FF:FF:FF"}
+	for _, input := range invalid {
+		if _, err := NormalizeHardwareID(input); !errors.Is(err, ErrDeviceValidation) {
+			t.Errorf("NormalizeHardwareID(%q) expected validation error, got %v", input, err)
+		}
+	}
+}
+
+func TestDeviceService_RegisterDevice_HardwareID(t *testing.T) {
+	notFound := func(context.Context, string) (*models.Device, error) { return nil, repositories.ErrDeviceNotFound }
+
+	t.Run("stores normalized hardware id on new device", func(t *testing.T) {
+		repository := &deviceRepositoryStub{getByDeviceIDFunc: notFound}
+		service := NewDeviceService(repository, nil)
+
+		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "aa:bb:cc:dd:ee:ff", "publisher", "", models.DeviceMetadata{}, "", "", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if device.HardwareID == nil || *device.HardwareID != "AABBCCDDEEFF" {
+			t.Fatalf("expected AABBCCDDEEFF, got %v", device.HardwareID)
+		}
+	})
+
+	t.Run("rejects malformed hardware id", func(t *testing.T) {
+		repository := &deviceRepositoryStub{getByDeviceIDFunc: notFound}
+		service := NewDeviceService(repository, nil)
+
+		_, err := service.RegisterDevice(context.Background(), "esp32-lab", "not-a-mac", "publisher", "", models.DeviceMetadata{}, "", "", nil)
+		if !errors.Is(err, ErrDeviceValidation) {
+			t.Fatalf("expected validation error, got %v", err)
+		}
+		if len(repository.created) != 0 {
+			t.Fatal("device must not be created")
+		}
+	})
+
+	t.Run("fills missing hardware id on existing device", func(t *testing.T) {
+		existing := &models.Device{DeviceID: "esp32-lab"}
+		repository := &deviceRepositoryStub{getByDeviceIDResult: existing}
+		service := NewDeviceService(repository, nil)
+
+		device, err := service.RegisterDevice(context.Background(), "esp32-lab", "AA-BB-CC-DD-EE-FF", "", "", models.DeviceMetadata{}, "", "", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if device.HardwareID == nil || *device.HardwareID != "AABBCCDDEEFF" || repository.updateInput == nil {
+			t.Fatalf("expected hardware id to be set and persisted, got %v", device.HardwareID)
+		}
+	})
+
+	t.Run("equivalent format on existing device is accepted", func(t *testing.T) {
+		stored := "AABBCCDDEEFF"
+		repository := &deviceRepositoryStub{getByDeviceIDResult: &models.Device{DeviceID: "esp32-lab", HardwareID: &stored}}
+		service := NewDeviceService(repository, nil)
+
+		if _, err := service.RegisterDevice(context.Background(), "esp32-lab", "aa:bb:cc:dd:ee:ff", "", "", models.DeviceMetadata{}, "", "", nil); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("never overwrites a different hardware id", func(t *testing.T) {
+		stored := "AABBCCDDEEFF"
+		repository := &deviceRepositoryStub{getByDeviceIDResult: &models.Device{DeviceID: "esp32-lab", HardwareID: &stored}}
+		service := NewDeviceService(repository, nil)
+
+		_, err := service.RegisterDevice(context.Background(), "esp32-lab", "11:22:33:44:55:66", "", "", models.DeviceMetadata{}, "", "", nil)
+		if !errors.Is(err, ErrHardwareIDMismatch) {
+			t.Fatalf("expected mismatch error, got %v", err)
+		}
+		if repository.updateInput != nil || stored != "AABBCCDDEEFF" {
+			t.Fatal("stored hardware id must not change")
+		}
+	})
+
+	t.Run("mismatch on an unowned device is rejected before claiming it", func(t *testing.T) {
+		stored := "AABBCCDDEEFF"
+		organizationID := uint(7)
+		repository := &deviceRepositoryStub{
+			getByDeviceIDFunc: func(ctx context.Context, _ string) (*models.Device, error) {
+				if _, scoped := tenancy.OrganizationIDFromContext(ctx); scoped {
+					return nil, repositories.ErrDeviceNotFound
+				}
+				return &models.Device{DeviceID: "esp32-lab", HardwareID: &stored}, nil
+			},
+		}
+		service := NewDeviceService(repository, nil)
+		ctx := tenancy.WithOrganizationID(context.Background(), organizationID)
+
+		_, err := service.RegisterDevice(ctx, "esp32-lab", "11:22:33:44:55:66", "", "", models.DeviceMetadata{}, "", "", nil)
+		if !errors.Is(err, ErrHardwareIDMismatch) {
+			t.Fatalf("expected mismatch error, got %v", err)
+		}
+		if repository.updateInput != nil {
+			t.Fatal("device must not be claimed by the organization when the hardware id does not match")
+		}
+	})
 }

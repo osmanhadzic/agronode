@@ -1,5 +1,7 @@
 # MQTT Contract - AgroNode
 
+> Phase 2: with `docker-compose.secure.yml`, devices authenticate with credentials from `POST /api/v1/devices/register` and may only publish `agronode/{deviceId}/telemetry|status` and subscribe to `agronode/{deviceId}/activation`. See [docs/DEVICE_PROVISIONING.md](docs/DEVICE_PROVISIONING.md).
+
 ## Topic Structure
 
 Devices publish telemetry and status to two topics:

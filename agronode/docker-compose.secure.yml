@@ -1,0 +1,36 @@
+# Production overlay: authenticated, TLS-only broker. Use together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.secure.yml up -d
+#
+# - Anonymous access is off and the file-based vmq_acl ("topic #") is disabled.
+# - Every connect/publish/subscribe is decided by the backend through vmq_webhooks.
+# - Devices connect over TLS on 8883. Plain 1883 stays unpublished (docker network only, still authenticated).
+# - The webhook listener (backend :9090) is never published; keep it on the internal network.
+services:
+  vernemq:
+    ports: !override
+      - "8883:8883"
+    environment:
+      DOCKER_VERNEMQ_ALLOW_ANONYMOUS: "off"
+      DOCKER_VERNEMQ_PLUGINS__VMQ_PASSWD: "off"
+      DOCKER_VERNEMQ_PLUGINS__VMQ_ACL: "off"
+      DOCKER_VERNEMQ_PLUGINS__VMQ_WEBHOOKS: "on"
+      DOCKER_VERNEMQ_VMQ_WEBHOOKS__WEBHOOK1__HOOK: auth_on_register
+      DOCKER_VERNEMQ_VMQ_WEBHOOKS__WEBHOOK1__ENDPOINT: http://backend:9090/vernemq/auth_on_register
+      DOCKER_VERNEMQ_VMQ_WEBHOOKS__WEBHOOK2__HOOK: auth_on_publish
+      DOCKER_VERNEMQ_VMQ_WEBHOOKS__WEBHOOK2__ENDPOINT: http://backend:9090/vernemq/auth_on_publish
+      DOCKER_VERNEMQ_VMQ_WEBHOOKS__WEBHOOK3__HOOK: auth_on_subscribe
+      DOCKER_VERNEMQ_VMQ_WEBHOOKS__WEBHOOK3__ENDPOINT: http://backend:9090/vernemq/auth_on_subscribe
+      DOCKER_VERNEMQ_LISTENER__SSL__DEFAULT: "0.0.0.0:8883"
+      DOCKER_VERNEMQ_LISTENER__SSL__CAFILE: /vernemq/certs/ca.crt
+      DOCKER_VERNEMQ_LISTENER__SSL__CERTFILE: /vernemq/certs/server.crt
+      DOCKER_VERNEMQ_LISTENER__SSL__KEYFILE: /vernemq/certs/server.key
+    volumes:
+      - ./infra/vernemq/certs:/vernemq/certs:ro
+
+  backend:
+    environment:
+      MQTT_BROKER: ${MQTT_BROKER:-tcp://vernemq:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:?set MQTT_USERNAME for the backend broker account}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?set MQTT_PASSWORD for the backend broker account}
+      VERNEMQ_WEBHOOK_ADDR: ":9090"
+      DEVICE_REGISTRATION_REQUIRE_HTTPS: "true"

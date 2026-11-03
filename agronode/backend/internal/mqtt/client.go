@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -57,12 +58,15 @@ type ActivationCommand struct {
 }
 
 type DeviceRegistrar interface {
-	RegisterDevice(ctx context.Context, deviceID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
+	RegisterDevice(ctx context.Context, deviceID string, hardwareID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
 }
 
 type Client struct {
 	brokerURL               string
 	topic                   string
+	username                string
+	password                string
+	tlsConfig               *tls.Config
 	activationTopicTemplate string
 	logger                  *slog.Logger
 	consumer                TelemetryConsumer
@@ -115,10 +119,28 @@ func (client *Client) PublishActivationCommand(_ context.Context, command Activa
 	return nil
 }
 
+// SetCredentials sets the broker service-account login used when the broker requires authentication.
+func (client *Client) SetCredentials(username string, password string) {
+	client.username = username
+	client.password = password
+}
+
+// SetTLSConfig sets the TLS settings for ssl:// broker URLs (e.g. a private CA pool).
+func (client *Client) SetTLSConfig(config *tls.Config) {
+	client.tlsConfig = config
+}
+
 func (client *Client) Run(runContext context.Context) error {
 	options := paho.NewClientOptions()
 	options.AddBroker(client.brokerURL)
 	options.SetClientID(fmt.Sprintf("agronode-backend-%d", time.Now().UnixNano()))
+	if client.username != "" {
+		options.SetUsername(client.username)
+		options.SetPassword(client.password)
+	}
+	if client.tlsConfig != nil {
+		options.SetTLSConfig(client.tlsConfig)
+	}
 	options.SetAutoReconnect(true)
 	options.SetConnectRetry(true)
 	options.SetConnectRetryInterval(2 * time.Second)
@@ -183,7 +205,7 @@ func (client *Client) ensureDeviceRegistration(ctx context.Context, deviceID str
 			registrationContext = tenancy.WithOrganizationID(registrationContext, client.defaultOrganizationID)
 		}
 
-		if _, err := client.registrar.RegisterDevice(registrationContext, deviceID, "publisher", "", models.DeviceMetadata{}, "", "", nil); err != nil {
+		if _, err := client.registrar.RegisterDevice(registrationContext, deviceID, "", "publisher", "", models.DeviceMetadata{}, "", "", nil); err != nil {
 			return nil, err
 		}
 
@@ -229,7 +251,7 @@ func (client *Client) handleMessage(_ paho.Client, message paho.Message) {
 			registrationContext = tenancy.WithOrganizationID(registrationContext, client.defaultOrganizationID)
 		}
 
-		if _, err := client.registrar.RegisterDevice(registrationContext, registration.DeviceID, "publisher", registration.FirmwareVersion, registration.Metadata, "", "", registration.Tags); err != nil {
+		if _, err := client.registrar.RegisterDevice(registrationContext, registration.DeviceID, "", "publisher", registration.FirmwareVersion, registration.Metadata, "", "", registration.Tags); err != nil {
 			client.logger.Error("device registration from mqtt failed", "deviceId", registration.DeviceID, "error", err)
 			return
 		}

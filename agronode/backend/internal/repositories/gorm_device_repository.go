@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"agronode/backend/internal/models"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -22,25 +23,39 @@ func NewGormDeviceRepository(database *gorm.DB) *GormDeviceRepository {
 
 // Create creates a new device or returns existing one (idempotent)
 func (repository *GormDeviceRepository) Create(ctx context.Context, device *models.Device) error {
-	// Use ON CONFLICT to make registration idempotent
+	// Use ON CONFLICT to make registration idempotent. A hardware ID is only
+	// filled in when the existing row has none; it is never overwritten.
 	result := repository.database.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "device_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"updated_at"}),
+			Columns: []clause.Column{{Name: "device_id"}},
+			DoUpdates: clause.Set{
+				{Column: clause.Column{Name: "updated_at"}, Value: gorm.Expr("excluded.updated_at")},
+				{Column: clause.Column{Name: "hardware_id"}, Value: gorm.Expr("COALESCE(devices.hardware_id, excluded.hardware_id)")},
+			},
 		}).
 		Create(device)
 
 	if result.Error != nil {
-		return result.Error
+		return translateHardwareIDError(result.Error)
 	}
 
-	// If the device already existed, fetch it to populate the device pointer with correct data
-	if result.RowsAffected == 0 {
-		existingDevice, err := repository.GetByDeviceID(ctx, device.DeviceID)
-		if err != nil {
-			return err
-		}
-		*device = *existingDevice
+	if device.HardwareID == nil {
+		return nil
+	}
+
+	// A concurrent registration of the same device_id is resolved by the upsert
+	// above, so confirm what was actually stored instead of trusting the request.
+	var stored *string
+	if err := repository.database.WithContext(ctx).
+		Model(&models.Device{}).
+		Where("device_id = ?", device.DeviceID).
+		Select("hardware_id").
+		Scan(&stored).Error; err != nil {
+		return err
+	}
+
+	if stored != nil && *stored != *device.HardwareID {
+		return ErrHardwareIDMismatch
 	}
 
 	return nil
@@ -75,7 +90,7 @@ func (repository *GormDeviceRepository) Update(ctx context.Context, device *mode
 		Updates(device)
 
 	if result.Error != nil {
-		return result.Error
+		return translateHardwareIDError(result.Error)
 	}
 
 	if result.RowsAffected == 0 {
@@ -143,4 +158,19 @@ func (repository *GormDeviceRepository) ListInactiveOnline(ctx context.Context, 
 	}
 
 	return devices, nil
+}
+
+// translateHardwareIDError maps a unique-constraint violation on hardware_id to ErrDuplicateHardwareID.
+func translateHardwareIDError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "hardware_id") {
+		return ErrDuplicateHardwareID
+	}
+
+	// SQLite (used in tests) reports "UNIQUE constraint failed: devices.hardware_id".
+	if strings.Contains(err.Error(), "UNIQUE constraint failed: devices.hardware_id") {
+		return ErrDuplicateHardwareID
+	}
+
+	return err
 }

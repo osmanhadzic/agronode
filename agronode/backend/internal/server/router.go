@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.AuthService, telemetryService handlers.TelemetryQueryService, streamControlService handlers.DeviceStreamControlService, triggerService handlers.TriggerService, deviceService handlers.DeviceRegistrationService, organizationService handlers.OrganizationService, realtimeHub *realtime.Hub, adminChatLLM services.AdminChatLLMService) *gin.Engine {
+func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.AuthService, telemetryService handlers.TelemetryQueryService, streamControlService handlers.DeviceStreamControlService, triggerService handlers.TriggerService, deviceService handlers.DeviceRegistrationService, organizationService handlers.OrganizationService, realtimeHub *realtime.Hub, adminChatLLM services.AdminChatLLMService, provisioningService handlers.DeviceProvisioningService, provisioningOptions handlers.ProvisioningOptions) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), requestLoggerMiddleware(logger))
 	router.Use(corsMiddleware())
@@ -20,11 +20,15 @@ func NewRouter(logger *slog.Logger, sessionSecret string, authService handlers.A
 	handlers.RegisterHealthRoutes(publicAPI, logger)
 	handlers.RegisterAuthRoutes(publicAPI, logger, authService)
 
+	// Token-gated, so it must stay outside the session middleware.
+	handlers.RegisterPublicProvisioningRoutes(router, logger, provisioningService, provisioningOptions)
+
 	router.Use(sessionAuthMiddleware(sessionSecret))
 
 	api := router.Group("/api")
 	handlers.RegisterTelemetryRoutes(api, logger, telemetryService)
 	handlers.RegisterDeviceRoutes(api, logger, deviceService)
+	handlers.RegisterProvisioningAdminRoutes(api, logger, provisioningService)
 	handlers.RegisterOrganizationRoutes(api, logger, organizationService)
 	handlers.RegisterDeviceStreamRoutes(api, logger, streamControlService)
 	handlers.RegisterTriggerRoutes(api, logger, triggerService)
@@ -85,4 +89,12 @@ func corsMiddleware() gin.HandlerFunc {
 
 		context.Next()
 	}
+}
+
+// NewBrokerWebhookRouter builds the internal-only router that VerneMQ calls for auth decisions.
+func NewBrokerWebhookRouter(logger *slog.Logger, authorizer handlers.MQTTAuthorizer) *gin.Engine {
+	router := gin.New()
+	router.Use(gin.Recovery())
+	handlers.RegisterVerneMQWebhookRoutes(router, logger, authorizer)
+	return router
 }

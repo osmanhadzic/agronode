@@ -112,6 +112,7 @@ curl -X POST http://localhost:8080/api/devices/register \
   -H "Content-Type: application/json" \
   -d '{
     "deviceId": "receiver-device-1",
+    "hardwareId": "AA:BB:CC:DD:EE:01",
     "name": "Receiver Device",
     "deviceType": "receiver"
   }'

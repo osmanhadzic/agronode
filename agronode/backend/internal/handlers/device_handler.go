@@ -15,7 +15,7 @@ import (
 )
 
 type DeviceRegistrationService interface {
-	RegisterDevice(ctx context.Context, deviceID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
+	RegisterDevice(ctx context.Context, deviceID string, hardwareID string, deviceType string, firmwareVersion string, metadata models.DeviceMetadata, apiKey string, provisioningToken string, tags []string) (*models.Device, error)
 	GetDevice(ctx context.Context, deviceID string) (*models.Device, error)
 	ListDevices(ctx context.Context, params services.DeviceListParams) ([]models.Device, error)
 	ListSensors(ctx context.Context, deviceID string) ([]models.Sensor, error)
@@ -28,6 +28,7 @@ type deviceHandler struct {
 
 type registerDeviceRequest struct {
 	DeviceID          string                `json:"deviceId" binding:"required"`
+	HardwareID        string                `json:"hardwareId" binding:"required"`
 	DeviceType        string                `json:"deviceType,omitempty" binding:"omitempty,oneof=publisher receiver unknown"`
 	FirmwareVersion   string                `json:"firmwareVersion,omitempty"`
 	Metadata          models.DeviceMetadata `json:"metadata,omitempty"`
@@ -39,6 +40,7 @@ type registerDeviceRequest struct {
 type deviceResponse struct {
 	ID              uint                     `json:"id"`
 	DeviceID        string                   `json:"deviceId"`
+	HardwareID      string                   `json:"hardwareId,omitempty"`
 	Status          string                   `json:"status"`
 	DeviceType      string                   `json:"deviceType"`
 	FirmwareVersion string                   `json:"firmwareVersion,omitempty"`
@@ -83,14 +85,21 @@ func (handler *deviceHandler) registerDevice(ctx *gin.Context) {
 		return
 	}
 
-	device, err := handler.service.RegisterDevice(requestContext, req.DeviceID, req.DeviceType, req.FirmwareVersion, req.Metadata, req.APIKey, req.ProvisioningToken, req.Tags)
+	device, err := handler.service.RegisterDevice(requestContext, req.DeviceID, req.HardwareID, req.DeviceType, req.FirmwareVersion, req.Metadata, req.APIKey, req.ProvisioningToken, req.Tags)
 	if err != nil {
-		handler.logger.Error("device registration failed", "deviceId", req.DeviceID, "error", err)
-
 		if errors.Is(err, services.ErrDeviceValidation) {
+			handler.logger.Warn("device registration rejected", "deviceId", req.DeviceID, "error", err)
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		if errors.Is(err, repositories.ErrDuplicateHardwareID) || errors.Is(err, services.ErrHardwareIDMismatch) {
+			handler.logger.Warn("device registration conflict", "deviceId", req.DeviceID, "error", err)
+			ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+
+		handler.logger.Error("device registration failed", "deviceId", req.DeviceID, "error", err)
 
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register device"})
 		return
@@ -204,6 +213,10 @@ func toDeviceResponse(device *models.Device) deviceResponse {
 		ReportedState:   device.ReportedState,
 		CreatedAt:       device.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:       device.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+
+	if device.HardwareID != nil {
+		response.HardwareID = *device.HardwareID
 	}
 
 	if device.LastSeen != nil {

@@ -15,6 +15,7 @@ type DeviceShadowState map[string]any
 type Device struct {
 	ID                    uint              `gorm:"primaryKey" json:"id"`
 	DeviceID              string            `gorm:"column:device_id;uniqueIndex;not null" json:"deviceId" binding:"required"`
+	HardwareID            *string           `gorm:"column:hardware_id;size:64" json:"hardwareId,omitempty"`
 	OrganizationID        *uint             `gorm:"column:organization_id" json:"organizationId,omitempty"`
 	ZoneID                *uint             `gorm:"column:asset_unit_id" json:"zoneId,omitempty"`
 	DeviceType            string            `gorm:"column:device_type;not null;default:'publisher'" json:"deviceType" binding:"omitempty,oneof=publisher receiver unknown"`
@@ -28,6 +29,11 @@ type Device struct {
 	DiscoveredSensors     []string          `gorm:"column:discovered_sensors;type:jsonb;serializer:json" json:"discoveredSensors,omitempty"`
 	APIKeyHash            string            `gorm:"column:api_key_hash" json:"-"`
 	ProvisioningTokenHash string            `gorm:"column:provisioning_token_hash" json:"-"`
+	MQTTUsername          *string           `gorm:"column:mqtt_username;size:64" json:"-"`
+	MQTTPasswordHash      string            `gorm:"column:mqtt_password_hash" json:"-"`
+	LifecycleStatus       string            `gorm:"column:lifecycle_status;not null;default:'pending'" json:"lifecycleStatus,omitempty"`
+	RegisteredAt          *time.Time        `gorm:"column:registered_at" json:"registeredAt,omitempty"`
+	CredentialsRotatedAt  *time.Time        `gorm:"column:credentials_rotated_at" json:"-"`
 	LastSeen              *time.Time        `gorm:"column:last_seen" json:"lastSeen,omitempty"`
 	CreatedAt             time.Time         `gorm:"column:created_at;not null;default:now()" json:"createdAt"`
 	UpdatedAt             time.Time         `gorm:"column:updated_at;not null;default:now()" json:"updatedAt"`
@@ -43,6 +49,12 @@ const (
 	DeviceTypeUnknown   = "unknown"
 	DeviceTypePublisher = "publisher"
 	DeviceTypeReceiver  = "receiver"
+
+	// Lifecycle statuses are separate from the presence Status above.
+	LifecyclePending  = "pending"
+	LifecycleActive   = "active"
+	LifecycleDisabled = "disabled"
+	LifecycleRevoked  = "revoked"
 
 	DeviceStatusUnknown = "unknown"
 	DeviceStatusOnline  = "online"
